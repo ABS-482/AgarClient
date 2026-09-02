@@ -12,6 +12,36 @@ class World
 {
 public:
     Blob& getOrCreateBlob(uint32_t id);
+    void updateFoodBlob(
+        uint32_t id,
+        int16_t x,
+        int16_t y,
+        int8_t size,
+        uint8_t colorIndex,
+        uint8_t cellType
+    );
+
+    void updateVirusBlob(
+        uint32_t id,
+        uint16_t x,
+        uint16_t y,
+        int16_t size,
+        int32_t skin,
+        uint8_t colorIndex,
+        uint8_t flags,
+        uint16_t playerID,
+        const std::string& name
+    );
+
+    void updatePlayerBlob(
+        uint32_t id,
+        uint16_t x,
+        uint16_t y,
+        int16_t size,
+        uint8_t flags,
+        uint16_t playerID,
+        const std::string& name
+    );
     void removeBlob(uint32_t id);
 
     // Потокобезопасный снапшот всех сущностей — вызывать из рендера.

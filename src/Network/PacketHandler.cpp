@@ -79,16 +79,14 @@ void PacketHandler::handleWorldUpdate(PacketReader& reader)
         int8_t size = reader.readInt8();
         uint8_t colorIndex = reader.readUint8();
 
-        Blob& blob = m_world.getOrCreateBlob(id);
-        blob.x = blob.targetX = static_cast<float>(x);
-        blob.y = blob.targetY = static_cast<float>(y);
-        blob.size = blob.targetSize = static_cast<float>(size);
-        blob.cellType = static_cast<CellType>(cellType);
-        blob.colorIndex = colorIndex;
-        blob.sticker = 0;
-        blob.skin = 0;
-        blob.isVirus = false;
-        blob.flags = 0;
+        m_world.updateFoodBlob(
+            id,
+            x,
+            y,
+            size,
+            colorIndex,
+            cellType
+        );
     }
 
     // ------------------------------------------------------------
@@ -110,23 +108,20 @@ void PacketHandler::handleWorldUpdate(PacketReader& reader)
         int32_t skin = reader.readInt32LE();
         uint8_t colorIndex = reader.readUint8();
         uint8_t flags = reader.readUint8();
-        bool isVirus = (flags & 1) != 0;
         uint16_t playerID = reader.readUint16LE();
         std::string name = reader.readUtf16String();
 
-        Blob& blob = m_world.getOrCreateBlob(id);
-        blob.x = blob.targetX = static_cast<float>(x);
-        blob.y = blob.targetY = static_cast<float>(y);
-        blob.size = blob.targetSize = static_cast<float>(size);
-        blob.cellType = CellType::Virus;
-        blob.colorIndex = colorIndex;
-        blob.skin = static_cast<uint32_t>(skin);
-        blob.playerID = playerID;
-        blob.isVirus = isVirus;
-        blob.flags = flags;
-
-        if (!name.empty())
-            blob.name = name;
+        m_world.updateVirusBlob(
+            id,
+            x,
+            y,
+            size,
+            skin,
+            colorIndex,
+            flags,
+            playerID,
+            name
+        );
     }
 
     // ------------------------------------------------------------
@@ -188,59 +183,21 @@ void PacketHandler::handleWorldUpdate(PacketReader& reader)
         uint16_t y = reader.readUint16LE();
         int16_t size = reader.readInt16LE();
         uint8_t flags = reader.readUint8();
-        bool isVirus = (flags & 1) != 0;
 
         uint16_t playerID = reader.readUint16LE();
         reader.skip(1); // выравнивание (offset += 3 вместо 2)
 
         std::string name = reader.readUtf16String();
 
-        Blob& blob = m_world.getOrCreateBlob(id);
-        blob.x = blob.targetX = static_cast<float>(x);
-        blob.y = blob.targetY = static_cast<float>(y);
-        blob.size = blob.targetSize = static_cast<float>(size);
-        blob.cellType = CellType::Player;
-        blob.playerID = playerID;
-        blob.isVirus = isVirus;
-        blob.flags = flags;
-
-        if (playerID > 0)
-        {
-            if (auto it = m_world.playerNames.find(playerID); it != m_world.playerNames.end())
-                blob.name = it->second;
-            else if (!name.empty())
-                blob.name = name;
-
-            if (auto it = m_world.playerSkins.find(playerID); it != m_world.playerSkins.end())
-                blob.skin = it->second;
-
-            if (auto it = m_world.playerColorIndexes.find(playerID); it != m_world.playerColorIndexes.end())
-                blob.colorIndex = it->second;
-
-            if (auto it = m_world.playerStickers.find(playerID); it != m_world.playerStickers.end())
-                blob.sticker = it->second;
-        }
-        else if (!name.empty())
-        {
-            blob.name = name;
-        }
-
-        // Клетка помечена как "своя" (актуально для spawn-режима).
-        if (flags & 32)
-        {
-            bool alreadyTracked = false;
-            for (uint32_t ownedId : m_world.ownedIds)
-            {
-                if (ownedId == id)
-                {
-                    alreadyTracked = true;
-                    break;
-                }
-            }
-
-            if (!alreadyTracked)
-                m_world.ownedIds.push_back(id);
-        }
+        m_world.updatePlayerBlob(
+            id,
+            x,
+            y,
+            size,
+            flags,
+            playerID,
+            name
+        );
     }
 
     // ------------------------------------------------------------
