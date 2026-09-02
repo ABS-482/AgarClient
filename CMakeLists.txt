@@ -15,6 +15,10 @@ find_package(glad CONFIG REQUIRED)
 
 add_executable(AgarClient
     src/main.cpp
+    src/Graphics/Window.cpp
+    src/Graphics/Shader.cpp
+    src/Input/InputManager.cpp
+    src/Core/FrameStats.cpp
 )
 
 target_link_libraries(AgarClient PRIVATE
