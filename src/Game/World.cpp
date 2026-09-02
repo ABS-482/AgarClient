@@ -1,21 +1,5 @@
 #include "World.h"
 
-Blob& World::getOrCreateBlob(uint32_t id)
-{
-    std::lock_guard<std::mutex> lock(m_mutex);
-
-    auto it = m_blobs.find(id);
-
-    if (it != m_blobs.end())
-        return it->second;
-
-    Blob blob;
-    blob.id = id;
-
-    auto result = m_blobs.emplace(id, blob);
-    return result.first->second;
-}
-
 void World::updateFoodBlob(
     uint32_t id,
     int16_t x,
@@ -194,6 +178,19 @@ void World::setPlayerSticker(uint16_t playerID, uint32_t sticker)
 {
     std::lock_guard<std::mutex> lock(m_mutex);
     playerStickers[playerID] = sticker;
+}
+
+void World::addOwnedBlob(uint32_t id)
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+
+    for (uint32_t ownedId : ownedIds)
+    {
+        if (ownedId == id)
+            return;
+    }
+
+    ownedIds.push_back(id);
 }
 
 void World::removeBlob(uint32_t id)
