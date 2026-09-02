@@ -13,16 +13,24 @@ find_package(SDL3 CONFIG REQUIRED)
 
 find_package(glad CONFIG REQUIRED)
 
+find_package(ixwebsocket CONFIG REQUIRED)
+
 add_executable(AgarClient
     src/main.cpp
     src/Graphics/Window.cpp
     src/Graphics/Shader.cpp
+    src/Graphics/Mesh.cpp
     src/Input/InputManager.cpp
     src/Core/FrameStats.cpp
+    src/Network/NetworkClient.cpp
+    src/Network/PacketHandler.cpp
+    src/Game/World.cpp
 )
 
 target_link_libraries(AgarClient PRIVATE
     SDL3::SDL3
     glad::glad
     opengl32
+    ixwebsocket::ixwebsocket
+    bcrypt
 )

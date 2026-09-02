@@ -1,0 +1,10 @@
+{
+  "name": "agar-client",
+  "version": "0.1.0",
+  "dependencies": [
+    "sdl3",
+    "glad",
+    "ixwebsocket",
+    "nlohmann-json"
+  ]
+}

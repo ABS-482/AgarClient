@@ -48,6 +48,11 @@ void Shader::use() const
     glUseProgram(m_program);
 }
 
+void Shader::setFloat(GLint location, float value) const
+{
+    glUniform1f(location, value);
+}
+
 GLint Shader::uniformLocation(const char* name) const
 {
     return glGetUniformLocation(m_program, name);

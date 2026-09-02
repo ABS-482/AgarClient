@@ -4,47 +4,37 @@
 #include "Core/FrameStats.h"
 #include "Graphics/Shader.h"
 #include "Graphics/Window.h"
+#include "Graphics/Mesh.h"
+#include "Graphics/Shaders/BasicShader.h"
 #include "Input/InputManager.h"
 #include "Input/InputState.h"
+#include "Network/NetworkClient.h"
+#include "Network/PacketHandler.h"
+#include "Game/World.h"
+
+#include <ixwebsocket/IXNetSystem.h>
 
 #include <cmath>
 #include <iomanip>
 #include <iostream>
 #include <sstream>
 
-const char* vertexShaderSource = R"(
-#version 330 core
-
-layout (location = 0) in vec2 aPos;
-
-uniform float offsetX;
-uniform float offsetY;
-
-void main()
-{
-    gl_Position = vec4(aPos.x + offsetX, aPos.y + offsetY, 0.0, 1.0);
-}
-)";
-
-const char* fragmentShaderSource = R"(
-#version 330 core
-
-out vec4 FragColor;
-
-void main()
-{
-    FragColor = vec4(1.0, 1.0, 1.0, 1.0);
-}
-)";
-
 int main()
 {
+    ix::initNetSystem();
+
     Window window("AgarClient", 1280, 720);
 
     if (!window.isValid())
+    {
+        ix::uninitNetSystem();
         return 1;
+    }
 
-    Shader shader(vertexShaderSource, fragmentShaderSource);
+    Shader shader(BasicShader::vertex, BasicShader::fragment);
+
+    GLint offsetXLocation = shader.uniformLocation("offsetX");
+    GLint offsetYLocation = shader.uniformLocation("offsetY");
 
     float vertices[] =
     {
@@ -57,17 +47,15 @@ int main()
         -0.05f,  0.05f
     };
 
-    GLuint VAO, VBO;
-    glGenVertexArrays(1, &VAO);
-    glGenBuffers(1, &VBO);
+    Mesh square(vertices, 6);
 
-    glBindVertexArray(VAO);
-    glBindBuffer(GL_ARRAY_BUFFER, VBO);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
-    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), nullptr);
-    glEnableVertexAttribArray(0);
-    glBindBuffer(GL_ARRAY_BUFFER, 0);
-    glBindVertexArray(0);
+    World world;
+    PacketHandler packetHandler(9, world);
+
+    NetworkClient network(packetHandler);
+
+    network.connect("wss://megasplit2.petridish.pw");
+    network.setPlayerPassword("");
 
     InputManager inputManager;
     InputState input;
@@ -95,12 +83,10 @@ int main()
         glClear(GL_COLOR_BUFFER_BIT);
 
         shader.use();
-        glUniform1f(shader.uniformLocation("offsetX"), objectX);
-        glUniform1f(shader.uniformLocation("offsetY"), objectY);
+        shader.setFloat(offsetXLocation, objectX);
+        shader.setFloat(offsetYLocation, objectY);
 
-        glBindVertexArray(VAO);
-        glDrawArrays(GL_TRIANGLES, 0, 6);
-        glBindVertexArray(0);
+        square.draw();
 
         window.swap();
 
@@ -119,6 +105,8 @@ int main()
             window.setTitle(title.str());
         }
     }
+
+    ix::uninitNetSystem();
 
     return 0;
 }
