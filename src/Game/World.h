@@ -42,6 +42,10 @@ public:
         uint16_t playerID,
         const std::string& name
     );
+    void setPlayerName(uint16_t playerID, const std::string& name);
+    void setPlayerSkin(uint16_t playerID, uint32_t skin);
+    void setPlayerColorIndex(uint16_t playerID, uint8_t colorIndex);
+    void setPlayerSticker(uint16_t playerID, uint32_t sticker);
     void removeBlob(uint32_t id);
 
     // Потокобезопасный снапшот всех сущностей — вызывать из рендера.

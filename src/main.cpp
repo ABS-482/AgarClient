@@ -50,10 +50,6 @@ int main()
     Mesh square(vertices, 6);
 
     World world;
-    std::cerr << "INITIAL WORLD SIZE = "
-        << world.snapshot().size() << '\n';
-    std::cerr << "WORLD ADDRESS = "
-        << &world << '\n';
     PacketHandler packetHandler(9, world);
 
     NetworkClient network(packetHandler);

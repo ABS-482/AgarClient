@@ -135,7 +135,7 @@ void PacketHandler::handleWorldUpdate(PacketReader& reader)
         std::string name = reader.readUtf16String();
 
         if (id > 0)
-            m_world.playerNames[id] = name;
+            m_world.setPlayerName(id, name);
     }
 
     uint16_t skinChanges = reader.readUint16LE();
@@ -145,7 +145,7 @@ void PacketHandler::handleWorldUpdate(PacketReader& reader)
         uint32_t skin = reader.readUint32LE();
 
         if (id > 0)
-            m_world.playerSkins[id] = skin;
+            m_world.setPlayerSkin(id, skin);
     }
 
     uint16_t colorChanges = reader.readUint16LE();
@@ -155,7 +155,7 @@ void PacketHandler::handleWorldUpdate(PacketReader& reader)
         uint8_t color = reader.readUint8();
 
         if (id > 0)
-            m_world.playerColorIndexes[id] = color;
+            m_world.setPlayerColorIndex(id, color);
     }
 
     uint16_t stickerChanges = reader.readUint16LE();
@@ -165,7 +165,7 @@ void PacketHandler::handleWorldUpdate(PacketReader& reader)
         uint32_t sticker = reader.readUint32LE();
 
         if (id > 0)
-            m_world.playerStickers[id] = sticker;
+            m_world.setPlayerSticker(id, sticker);
     }
 
     // ------------------------------------------------------------

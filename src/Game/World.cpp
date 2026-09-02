@@ -172,6 +172,30 @@ void World::updatePlayerBlob(
     }
 }
 
+void World::setPlayerName(uint16_t playerID, const std::string& name)
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+    playerNames[playerID] = name;
+}
+
+void World::setPlayerSkin(uint16_t playerID, uint32_t skin)
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+    playerSkins[playerID] = skin;
+}
+
+void World::setPlayerColorIndex(uint16_t playerID, uint8_t colorIndex)
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+    playerColorIndexes[playerID] = colorIndex;
+}
+
+void World::setPlayerSticker(uint16_t playerID, uint32_t sticker)
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+    playerStickers[playerID] = sticker;
+}
+
 void World::removeBlob(uint32_t id)
 {
     std::lock_guard<std::mutex> lock(m_mutex);
