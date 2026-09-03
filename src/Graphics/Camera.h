@@ -19,8 +19,8 @@ public:
     // true — после клика едет туда, куда кликнули.
     bool hasManualTarget = false;
 
-    static constexpr float minZoom = 0.02f;
-    static constexpr float maxZoom = 5.0f;
+    static constexpr float minZoom = 0.05f;
+    static constexpr float maxZoom = 0.4f;
 
     void fitToBlobs(const std::unordered_map<uint32_t, Blob>& blobs);
 

@@ -44,7 +44,14 @@ void Camera::setManualTarget(float worldX, float worldY)
 
 void Camera::zoomBy(float wheelDelta)
 {
-    zoom *= std::pow(0.9f, -wheelDelta);
+    float step = wheelDelta * 0.3f;
+
+    if (zoom < minZoom * 4.0f) // порог замедления теперь пропорционален вашим реальным границам
+    {
+        step *= 0.1f;
+    }
+
+    zoom += step;
     zoom = std::clamp(zoom, minZoom, maxZoom);
 }
 

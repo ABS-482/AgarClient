@@ -46,8 +46,8 @@ void TextRenderer::drawCentered(
 
     float scaledWidth = width * fontScale;
 
-    float offsetX = screenCenterX - scaledWidth * 0.5f;
-    float offsetY = screenCenterY + (70.0f * fontScale) / 3.0f;
+    float baseOffsetX = screenCenterX - scaledWidth * 0.5f;
+    float baseOffsetY = screenCenterY + (70.0f * fontScale) / 3.0f;
 
     shader.use();
 
@@ -56,8 +56,6 @@ void TextRenderer::drawCentered(
 
     shader.setInt(shader.uniformLocation("uAtlas"), 0);
     shader.setVec2(shader.uniformLocation("uScreenSize"), screenWidth, screenHeight);
-    shader.setVec2(shader.uniformLocation("uOffset"), offsetX, offsetY);
-    shader.setVec3(shader.uniformLocation("uColor"), r, g, b);
     shader.setFloat(shader.uniformLocation("uScale"), fontScale);
 
     glBindVertexArray(m_vao);
@@ -68,6 +66,34 @@ void TextRenderer::drawCentered(
         vertices.data(),
         GL_DYNAMIC_DRAW
     );
+
+    // --- Обводка: 4 прохода чёрным цветом со смещением на 1px ---
+    constexpr float outlineOffset = 0.6f;
+
+    const float offsets[4][2] =
+    {
+        { -outlineOffset, 0.0f },
+        {  outlineOffset, 0.0f },
+        { 0.0f, -outlineOffset },
+        { 0.0f,  outlineOffset }
+    };
+
+    shader.setVec3(shader.uniformLocation("uColor"), 0.0f, 0.0f, 0.0f);
+
+    for (const auto& [dx, dy] : offsets)
+    {
+        shader.setVec2(
+            shader.uniformLocation("uOffset"),
+            baseOffsetX + dx,
+            baseOffsetY + dy
+        );
+
+        glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(vertices.size() / 4));
+    }
+
+    // --- Основной текст поверх обводки ---
+    shader.setVec3(shader.uniformLocation("uColor"), r, g, b);
+    shader.setVec2(shader.uniformLocation("uOffset"), baseOffsetX, baseOffsetY);
 
     glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(vertices.size() / 4));
 

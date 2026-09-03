@@ -237,10 +237,6 @@ int main()
             }
         );
 
-        // --- Проход 2: рисуем ВСЕ круги, circleShader активен один раз ---
-        // Настраиваем константные uniform'ы для ОБОИХ шейдеров один раз —
-// дальше внутри цикла можно свободно переключаться между ними,
-// не переустанавливая камеру/экран заново при каждом переключении.
         circleShader.use();
         circleShader.setVec2(uCameraPos, camera.x, camera.y);
         circleShader.setFloat(uZoom, camera.zoom);
@@ -259,14 +255,14 @@ int main()
             static_cast<float>(window.height())
         );
 
-        // Единый проход по отсортированному списку — круг и скин
-        // каждой сущности рисуются подряд, поэтому порядок глубины
-        // соблюдается ПРАВИЛЬНО и между кругами, и между скинами разом.
+        constexpr float virusFontMultiplier = 1.6f;
+
         for (const auto& entry : drawList)
         {
             const Blob& blob = *entry.blob;
             RenderState& rs = renderStates[entry.id];
 
+            // --- Круг ---
             circleShader.use();
             circleShader.setVec2(uCenter, rs.x, rs.y);
             circleShader.setFloat(uRadius, rs.size);
@@ -276,6 +272,7 @@ int main()
 
             circleMesh.draw();
 
+            // --- Скин ---
             bool wantsSkin =
                 (blob.cellType == CellType::Player || blob.cellType == CellType::Virus) &&
                 blob.skin != 0;
@@ -297,16 +294,8 @@ int main()
                     skinMesh.draw();
                 }
             }
-        }
 
-        glBindTexture(GL_TEXTURE_2D, 0);
-
-        // --- Проход 4: имена и масса — без изменений ---
-        for (const auto& [id, blob] : blobs)
-        {
-            RenderState& rs = renderStates[id];
-
-            // Имя
+            // --- Имя ---
             if (!blob.name.empty())
             {
                 float screenX, screenY;
@@ -317,14 +306,17 @@ int main()
                 );
 
                 float nameSize = std::max(std::floor(0.3f * rs.size), 24.0f);
+
+                if (blob.cellType == CellType::Virus)
+                {
+                    nameSize *= virusFontMultiplier;
+                }
+
                 float fontScale = (nameSize * camera.zoom) / 70.0f;
 
                 textRenderer.drawCentered(
-                    font,
-                    textShader,
-                    blob.name,
-                    screenX,
-                    screenY,
+                    font, textShader, blob.name,
+                    screenX, screenY,
                     static_cast<float>(window.width()),
                     static_cast<float>(window.height()),
                     1.0f, 1.0f, 1.0f,
@@ -332,9 +324,8 @@ int main()
                 );
             }
 
-            // Масса
-            if (blob.cellType == CellType::Player ||
-                blob.cellType == CellType::Virus)
+            // --- Масса ---
+            if (blob.cellType == CellType::Player || blob.cellType == CellType::Virus)
             {
                 float f10 = std::max(
                     rs.size * 0.2f,
@@ -346,7 +337,7 @@ int main()
 
                 if (blob.cellType == CellType::Virus)
                 {
-                    massFontSize = f10 * 1.4f;
+                    massFontSize = f10 * 1.4f * virusFontMultiplier;
                     massWorldY = rs.y;
                 }
                 else
@@ -355,10 +346,7 @@ int main()
                     massWorldY = rs.y + 50.0f * rs.size / 100.0f;
                 }
 
-                int score = static_cast<int>(
-                    std::ceil(rs.size * rs.size / 100.0f)
-                    );
-
+                int score = static_cast<int>(std::ceil(rs.size * rs.size / 100.0f));
                 std::string massText = std::to_string(score);
 
                 float massScreenX, massScreenY;
@@ -368,15 +356,11 @@ int main()
                     massScreenX, massScreenY
                 );
 
-                float massFontScale =
-                    (massFontSize * camera.zoom) / 70.0f;
+                float massFontScale = (massFontSize * camera.zoom) / 70.0f;
 
                 textRenderer.drawCentered(
-                    font,
-                    textShader,
-                    massText,
-                    massScreenX,
-                    massScreenY,
+                    font, textShader, massText,
+                    massScreenX, massScreenY,
                     static_cast<float>(window.width()),
                     static_cast<float>(window.height()),
                     1.0f, 1.0f, 1.0f,
@@ -384,6 +368,8 @@ int main()
                 );
             }
         }
+
+        glBindTexture(GL_TEXTURE_2D, 0);
 
         for (auto it = renderStates.begin(); it != renderStates.end(); )
         {
@@ -403,7 +389,8 @@ int main()
             title << "AgarClient | "
                 << std::fixed << std::setprecision(0) << stats.fps()
                 << " FPS | avg " << std::setprecision(3) << stats.averageFrameTimeMs()
-                << " ms | entities " << blobs.size();
+                << " ms | entities " << blobs.size()
+                << " | zoom " << std::setprecision(4) << camera.zoom;
 
             window.setTitle(title.str());
         }
