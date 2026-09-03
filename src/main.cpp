@@ -13,6 +13,9 @@
 #include "Graphics/Font.h"
 #include "Graphics/TextRenderer.h"
 #include "Graphics/Shaders/TextShader.h"
+#include "Graphics/SkinManager.h"
+#include "Graphics/SkinMesh.h"
+#include "Graphics/Shaders/SkinShader.h"
 #include "Input/InputManager.h"
 #include "Input/InputState.h"
 #include "Network/NetworkClient.h"
@@ -72,6 +75,8 @@ int main()
     }
 
     Shader circleShader(CircleShader::vertex, CircleShader::fragment);
+    Shader skinShader(SkinShader::vertex, SkinShader::fragment);
+    SkinMesh skinMesh;
 
     Font font("C:/Windows/Fonts/arial.ttf", 70.0f);
     Shader textShader(TextShader::vertex, TextShader::fragment);
@@ -84,10 +89,18 @@ int main()
     GLint uScreenSize = circleShader.uniformLocation("uScreenSize");
     GLint uColor = circleShader.uniformLocation("uColor");
 
+    GLint skinCenter = skinShader.uniformLocation("uCenter");
+    GLint skinRadius = skinShader.uniformLocation("uRadius");
+    GLint skinCameraPos = skinShader.uniformLocation("uCameraPos");
+    GLint skinZoom = skinShader.uniformLocation("uZoom");
+    GLint skinScreenSize = skinShader.uniformLocation("uScreenSize");
+    GLint skinTexture = skinShader.uniformLocation("uSkin");
+
     CircleMesh circleMesh;
     Camera camera;
 
     World world;
+    SkinManager skinManager;
 
     struct RenderState
     {
@@ -200,6 +213,44 @@ int main()
             circleShader.setVec3(uColor, rgb.r / 255.0f, rgb.g / 255.0f, rgb.b / 255.0f);
 
             circleMesh.draw();
+            if (blob.skin > 0)
+            {
+                GLuint texture = skinManager.getTexture(blob.skin);
+
+                if (texture != 0)
+                {
+                    skinShader.use();
+
+                    skinShader.setVec2(skinCenter, rs.x, rs.y);
+                    skinShader.setFloat(skinRadius, rs.size);
+
+                    skinShader.setVec2(
+                        skinCameraPos,
+                        camera.x,
+                        camera.y
+                    );
+
+                    skinShader.setFloat(
+                        skinZoom,
+                        camera.zoom
+                    );
+
+                    skinShader.setVec2(
+                        skinScreenSize,
+                        static_cast<float>(window.width()),
+                        static_cast<float>(window.height())
+                    );
+
+                    glActiveTexture(GL_TEXTURE0);
+                    glBindTexture(GL_TEXTURE_2D, texture);
+
+                    skinShader.setInt(skinTexture, 0);
+
+                    skinMesh.draw();
+
+                    glBindTexture(GL_TEXTURE_2D, 0);
+                }
+            }
         }
 
         for (const auto& [id, blob] : blobs)

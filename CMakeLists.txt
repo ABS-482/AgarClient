@@ -27,6 +27,9 @@ add_executable(AgarClient
     src/Graphics/Camera.cpp
     src/Graphics/Font.cpp
     src/Graphics/TextRenderer.cpp
+    src/Graphics/SkinManager.cpp
+    src/Graphics/StbImage.cpp
+    src/Graphics/SkinMesh.cpp
     src/Input/InputManager.cpp
     src/Core/FrameStats.cpp
     src/Network/NetworkClient.cpp
@@ -40,6 +43,7 @@ target_link_libraries(AgarClient PRIVATE
     opengl32
     ixwebsocket::ixwebsocket
     bcrypt
+    winhttp
 )
 
 target_include_directories(AgarClient PRIVATE ${Stb_INCLUDE_DIR})
