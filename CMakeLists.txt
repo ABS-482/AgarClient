@@ -21,6 +21,8 @@ add_executable(AgarClient
     src/Graphics/Shader.cpp
     src/Graphics/Mesh.cpp
     src/Graphics/CircleMesh.cpp
+    src/Graphics/PlayerColors.cpp
+    src/Graphics/Camera.cpp
     src/Input/InputManager.cpp
     src/Core/FrameStats.cpp
     src/Network/NetworkClient.cpp

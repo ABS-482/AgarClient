@@ -16,6 +16,7 @@ public:
     void disconnect();
     void requestSpectate();
     void setPlayerPassword(const std::string& password) { m_playerPassword = password; }
+    void sendSpectatePosition(double worldX, double worldY);
 
     bool isConnected() const { return m_connected; }
 

@@ -10,4 +10,8 @@ struct InputState
 
     bool leftButton = false;
     bool rightButton = false;
+
+    bool leftButtonJustPressed = false;
+
+    float mouseWheel = 0.0f;
 };

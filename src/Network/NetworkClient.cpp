@@ -1,6 +1,7 @@
 #include "NetworkClient.h"
 
 #include <iostream>
+#include <cstring>
 #include <random>
 
 NetworkClient::NetworkClient(PacketHandler& handler)
@@ -140,4 +141,18 @@ void NetworkClient::sendPlayerPassword()
     }
 
     sendRaw(buf.data(), buf.size());
+}
+
+void NetworkClient::sendSpectatePosition(double worldX, double worldY)
+{
+    uint8_t buf[21];
+    buf[0] = 16;
+
+    std::memcpy(buf + 1, &worldX, sizeof(double));
+    std::memcpy(buf + 9, &worldY, sizeof(double));
+
+    uint32_t zero = 0;
+    std::memcpy(buf + 17, &zero, sizeof(uint32_t));
+
+    sendRaw(buf, sizeof(buf));
 }

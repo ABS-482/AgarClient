@@ -12,30 +12,13 @@ void World::updateFoodBlob(
     std::lock_guard<std::mutex> lock(m_mutex);
 
     auto [it, inserted] = m_blobs.try_emplace(id);
-
     Blob& blob = it->second;
 
-    if (inserted)
-    {
-        blob.id = id;
-        blob.x = static_cast<float>(x);
-        blob.y = static_cast<float>(y);
-        blob.size = static_cast<float>(size);
-
-        blob.targetX = blob.x;
-        blob.targetY = blob.y;
-        blob.targetSize = blob.size;
-    }
-    else
-    {
-        blob.x = static_cast<float>(x);
-        blob.y = static_cast<float>(y);
-        blob.size = static_cast<float>(size);
-
-        blob.targetX = blob.x;
-        blob.targetY = blob.y;
-        blob.targetSize = blob.size;
-    }
+    blob.id = id;
+    blob.targetX = static_cast<float>(x);
+    blob.targetY = static_cast<float>(y);
+    blob.targetSize = static_cast<float>(size);
+    blob.lastUpdateTime = std::chrono::steady_clock::now();
 
     blob.cellType = static_cast<CellType>(cellType);
     blob.colorIndex = colorIndex;
@@ -60,18 +43,13 @@ void World::updateVirusBlob(
     std::lock_guard<std::mutex> lock(m_mutex);
 
     auto [it, inserted] = m_blobs.try_emplace(id);
-
     Blob& blob = it->second;
 
     blob.id = id;
-
-    blob.x = static_cast<float>(x);
-    blob.y = static_cast<float>(y);
-    blob.size = static_cast<float>(size);
-
-    blob.targetX = blob.x;
-    blob.targetY = blob.y;
-    blob.targetSize = blob.size;
+    blob.targetX = static_cast<float>(x);
+    blob.targetY = static_cast<float>(y);
+    blob.targetSize = static_cast<float>(size);
+    blob.lastUpdateTime = std::chrono::steady_clock::now();
 
     blob.cellType = CellType::Virus;
     blob.colorIndex = colorIndex;
@@ -99,18 +77,13 @@ void World::updatePlayerBlob(
     std::lock_guard<std::mutex> lock(m_mutex);
 
     auto [it, inserted] = m_blobs.try_emplace(id);
-
     Blob& blob = it->second;
 
     blob.id = id;
-
-    blob.x = static_cast<float>(x);
-    blob.y = static_cast<float>(y);
-    blob.size = static_cast<float>(size);
-
-    blob.targetX = blob.x;
-    blob.targetY = blob.y;
-    blob.targetSize = blob.size;
+    blob.targetX = static_cast<float>(x);
+    blob.targetY = static_cast<float>(y);
+    blob.targetSize = static_cast<float>(size);
+    blob.lastUpdateTime = std::chrono::steady_clock::now();
 
     blob.cellType = CellType::Player;
     blob.playerID = playerID;

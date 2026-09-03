@@ -13,6 +13,8 @@ public:
 
     void use() const;
     void setFloat(GLint location, float value) const;
+    void setVec2(GLint location, float x, float y) const;
+    void setVec3(GLint location, float x, float y, float z) const;
     GLint uniformLocation(const char* name) const;
 
     GLuint id() const { return m_program; }

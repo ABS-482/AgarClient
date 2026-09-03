@@ -9,12 +9,13 @@ namespace BasicShader
 
         uniform float offsetX;
         uniform float offsetY;
+        uniform float scale;
 
         void main()
         {
             gl_Position = vec4(
-                aPos.x + offsetX,
-                aPos.y + offsetY,
+                aPos.x * scale + offsetX,
+                aPos.y * scale + offsetY,
                 0.0,
                 1.0
             );
@@ -26,9 +27,11 @@ namespace BasicShader
 
         out vec4 FragColor;
 
+        uniform vec3 color;
+
         void main()
         {
-            FragColor = vec4(1.0, 1.0, 1.0, 1.0);
+            FragColor = vec4(color, 1.0);
         }
     )";
 }

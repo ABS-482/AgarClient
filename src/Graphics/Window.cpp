@@ -15,6 +15,8 @@ Window::Window(const char* title, int width, int height)
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
+    SDL_GL_SetAttribute(SDL_GL_MULTISAMPLEBUFFERS, 1);
+    SDL_GL_SetAttribute(SDL_GL_MULTISAMPLESAMPLES, 4);
 
     m_window = SDL_CreateWindow(title, width, height, SDL_WINDOW_OPENGL);
 
@@ -45,6 +47,8 @@ Window::Window(const char* title, int width, int height)
     }
 
     std::cout << "OpenGL functions loaded successfully.\n";
+
+    glEnable(GL_MULTISAMPLE);
 
     // VSync off — важно для честных замеров производительности.
     if (!SDL_GL_SetSwapInterval(0))
