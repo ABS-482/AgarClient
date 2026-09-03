@@ -5,7 +5,7 @@ namespace CircleShader
     inline constexpr const char* vertex = R"(
         #version 330 core
 
-        layout (location = 0) in vec2 aPos;
+        layout (location = 0) in vec2 aPos; // квад -1..1
 
         uniform vec2 uCenter;
         uniform float uRadius;
@@ -13,8 +13,12 @@ namespace CircleShader
         uniform float uZoom;
         uniform vec2 uScreenSize;
 
+        out vec2 vLocalPos;
+
         void main()
         {
+            vLocalPos = aPos;
+
             vec2 worldPos = uCenter + aPos * uRadius;
             vec2 rel = worldPos - uCameraPos;
 
@@ -30,13 +34,25 @@ namespace CircleShader
     inline constexpr const char* fragment = R"(
         #version 330 core
 
+        in vec2 vLocalPos;
+
         uniform vec3 uColor;
 
         out vec4 FragColor;
 
         void main()
         {
-            FragColor = vec4(uColor, 1.0);
+            float dist = length(vLocalPos);
+
+            // Ширина сглаживания адаптируется под масштаб экрана (fwidth) —
+            // край остаётся чётким и гладким при любом зуме камеры.
+            float edge = fwidth(dist);
+            float alpha = 1.0 - smoothstep(1.0 - edge, 1.0 + edge, dist);
+
+            if (alpha <= 0.0)
+                discard;
+
+            FragColor = vec4(uColor, alpha);
         }
     )";
 }

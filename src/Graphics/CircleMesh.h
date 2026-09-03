@@ -1,20 +1,21 @@
 #pragma once
 
-#include <cstddef>
+#include <glad/glad.h>
 
+// Единичный квад (-1..1) — форма круга вычисляется в фрагментном
+// шейдере через SDF, а не полигональной аппроксимацией.
 class CircleMesh
 {
 public:
-    explicit CircleMesh(std::size_t segments = 64);
+    CircleMesh();
     ~CircleMesh();
-
-    void draw() const;
 
     CircleMesh(const CircleMesh&) = delete;
     CircleMesh& operator=(const CircleMesh&) = delete;
 
+    void draw() const;
+
 private:
-    unsigned int m_vao = 0;
-    unsigned int m_vbo = 0;
-    std::size_t m_vertexCount = 0;
+    GLuint m_vao = 0;
+    GLuint m_vbo = 0;
 };

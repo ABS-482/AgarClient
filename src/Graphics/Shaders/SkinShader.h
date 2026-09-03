@@ -48,7 +48,17 @@ namespace SkinShader
 
         void main()
         {
-            FragColor = texture(uSkin, vUV);
+            vec2 centered = vUV - vec2(0.5);
+            float dist = length(centered) * 2.0; // нормализуем к диапазону ~0..1, как в uv-радиусе 0.5
+
+            float edge = fwidth(dist);
+            float alpha = 1.0 - smoothstep(1.0 - edge, 1.0 + edge, dist);
+
+            if (alpha <= 0.0)
+                discard;
+
+            vec4 texColor = texture(uSkin, vUV);
+            FragColor = vec4(texColor.rgb, texColor.a * alpha);
         }
     )";
 }

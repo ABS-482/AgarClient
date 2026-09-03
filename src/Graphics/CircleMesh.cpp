@@ -1,56 +1,26 @@
 #include "CircleMesh.h"
 
-#include <glad/glad.h>
-
-#include <cmath>
-#include <vector>
-
-CircleMesh::CircleMesh(std::size_t segments)
-    : m_vertexCount(segments + 2)
+CircleMesh::CircleMesh()
 {
-    std::vector<float> vertices;
-    vertices.reserve(m_vertexCount * 2);
-
-    // Центр круга
-    vertices.push_back(0.0f);
-    vertices.push_back(0.0f);
-
-    constexpr float pi = 3.14159265358979323846f;
-
-    // Вершины по окружности
-    for (std::size_t i = 0; i <= segments; ++i)
+    float vertices[] =
     {
-        float angle =
-            2.0f * pi * static_cast<float>(i) /
-            static_cast<float>(segments);
+        -1.0f, -1.0f,
+         1.0f, -1.0f,
+         1.0f,  1.0f,
 
-        vertices.push_back(std::cos(angle));
-        vertices.push_back(std::sin(angle));
-    }
+        -1.0f, -1.0f,
+         1.0f,  1.0f,
+        -1.0f,  1.0f
+    };
 
     glGenVertexArrays(1, &m_vao);
     glGenBuffers(1, &m_vbo);
 
     glBindVertexArray(m_vao);
-
     glBindBuffer(GL_ARRAY_BUFFER, m_vbo);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
 
-    glBufferData(
-        GL_ARRAY_BUFFER,
-        vertices.size() * sizeof(float),
-        vertices.data(),
-        GL_STATIC_DRAW
-    );
-
-    glVertexAttribPointer(
-        0,
-        2,
-        GL_FLOAT,
-        GL_FALSE,
-        2 * sizeof(float),
-        nullptr
-    );
-
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), nullptr);
     glEnableVertexAttribArray(0);
 
     glBindBuffer(GL_ARRAY_BUFFER, 0);
@@ -66,12 +36,6 @@ CircleMesh::~CircleMesh()
 void CircleMesh::draw() const
 {
     glBindVertexArray(m_vao);
-
-    glDrawArrays(
-        GL_TRIANGLE_FAN,
-        0,
-        static_cast<GLsizei>(m_vertexCount)
-    );
-
+    glDrawArrays(GL_TRIANGLES, 0, 6);
     glBindVertexArray(0);
 }

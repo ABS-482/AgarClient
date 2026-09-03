@@ -113,6 +113,7 @@ int main()
         float size = 0.0f;
 
         std::chrono::steady_clock::time_point lastSeenUpdate{};
+        CellType lastCellType = CellType::Food;
         bool initialized = false;
     };
 
@@ -121,7 +122,7 @@ int main()
     PacketHandler packetHandler(9, world);
 
     NetworkClient network(packetHandler);
-    network.connect("wss://megasplit5k5.petridish.pw");
+    network.connect("wss://megasplit5k1.petridish.pw");
     network.setPlayerPassword("");
 
     InputManager inputManager;
@@ -137,6 +138,8 @@ int main()
         running = inputManager.poll(input);
 
         auto blobs = world.snapshot();
+
+        skinManager.processCompleted();
 
         camera.fitToBlobs(blobs);
 
@@ -164,19 +167,14 @@ int main()
         glClearColor(0.06f, 0.06f, 0.09f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT);
 
-        circleShader.use();
-        circleShader.setVec2(uCameraPos, camera.x, camera.y);
-        circleShader.setFloat(uZoom, camera.zoom);
-        circleShader.setVec2(
-            uScreenSize,
-            static_cast<float>(window.width()),
-            static_cast<float>(window.height())
-        );
-
         constexpr float interpolationDuration = 0.12f;
 
         auto now = std::chrono::steady_clock::now();
 
+        // --- Проход 1: обновляем RenderState для всех сущностей ---
+// (без рисования — только пересчёт интерполированных позиций,
+// чтобы обе последующие стадии рендера использовали одни и те же
+// rs.x/rs.y/rs.size за этот кадр)
         for (const auto& [id, blob] : blobs)
         {
             RenderState& rs = renderStates[id];
@@ -187,12 +185,19 @@ int main()
                 rs.prevY = rs.y = blob.targetY;
                 rs.prevSize = rs.size = blob.targetSize;
                 rs.lastSeenUpdate = blob.lastUpdateTime;
+                rs.lastCellType = blob.cellType;
                 rs.initialized = true;
+            }
+            else if (blob.cellType != rs.lastCellType)
+            {
+                rs.prevX = rs.x = blob.targetX;
+                rs.prevY = rs.y = blob.targetY;
+                rs.prevSize = rs.size = blob.targetSize;
+                rs.lastSeenUpdate = blob.lastUpdateTime;
+                rs.lastCellType = blob.cellType;
             }
             else if (blob.lastUpdateTime != rs.lastSeenUpdate)
             {
-                // Пришёл новый world update — фиксируем текущую
-                // отрисованную позицию как новую точку "откуда".
                 rs.prevX = rs.x;
                 rs.prevY = rs.y;
                 rs.prevSize = rs.size;
@@ -205,7 +210,64 @@ int main()
             rs.x = rs.prevX + (blob.targetX - rs.prevX) * t;
             rs.y = rs.prevY + (blob.targetY - rs.prevY) * t;
             rs.size = rs.prevSize + (blob.targetSize - rs.prevSize) * t;
+        }
 
+        // --- Формируем порядок отрисовки: крупные сущности первыми ("сзади"),
+        // мелкие последними ("сверху") — как в оригинальной игре ---
+        struct DrawEntry
+        {
+            uint32_t id;
+            const Blob* blob;
+            float size;
+        };
+
+        std::vector<DrawEntry> drawList;
+        drawList.reserve(blobs.size());
+
+        for (const auto& [id, blob] : blobs)
+        {
+            drawList.push_back({ id, &blob, renderStates[id].size });
+        }
+
+        std::sort(
+            drawList.begin(), drawList.end(),
+            [](const DrawEntry& a, const DrawEntry& b)
+            {
+                return a.size < b.size;
+            }
+        );
+
+        // --- Проход 2: рисуем ВСЕ круги, circleShader активен один раз ---
+        // Настраиваем константные uniform'ы для ОБОИХ шейдеров один раз —
+// дальше внутри цикла можно свободно переключаться между ними,
+// не переустанавливая камеру/экран заново при каждом переключении.
+        circleShader.use();
+        circleShader.setVec2(uCameraPos, camera.x, camera.y);
+        circleShader.setFloat(uZoom, camera.zoom);
+        circleShader.setVec2(
+            uScreenSize,
+            static_cast<float>(window.width()),
+            static_cast<float>(window.height())
+        );
+
+        skinShader.use();
+        skinShader.setVec2(skinCameraPos, camera.x, camera.y);
+        skinShader.setFloat(skinZoom, camera.zoom);
+        skinShader.setVec2(
+            skinScreenSize,
+            static_cast<float>(window.width()),
+            static_cast<float>(window.height())
+        );
+
+        // Единый проход по отсортированному списку — круг и скин
+        // каждой сущности рисуются подряд, поэтому порядок глубины
+        // соблюдается ПРАВИЛЬНО и между кругами, и между скинами разом.
+        for (const auto& entry : drawList)
+        {
+            const Blob& blob = *entry.blob;
+            RenderState& rs = renderStates[entry.id];
+
+            circleShader.use();
             circleShader.setVec2(uCenter, rs.x, rs.y);
             circleShader.setFloat(uRadius, rs.size);
 
@@ -213,46 +275,33 @@ int main()
             circleShader.setVec3(uColor, rgb.r / 255.0f, rgb.g / 255.0f, rgb.b / 255.0f);
 
             circleMesh.draw();
-            if (blob.skin > 0)
+
+            bool wantsSkin =
+                (blob.cellType == CellType::Player || blob.cellType == CellType::Virus) &&
+                blob.skin != 0;
+
+            if (wantsSkin)
             {
                 GLuint texture = skinManager.getTexture(blob.skin);
 
                 if (texture != 0)
                 {
                     skinShader.use();
-
                     skinShader.setVec2(skinCenter, rs.x, rs.y);
                     skinShader.setFloat(skinRadius, rs.size);
 
-                    skinShader.setVec2(
-                        skinCameraPos,
-                        camera.x,
-                        camera.y
-                    );
-
-                    skinShader.setFloat(
-                        skinZoom,
-                        camera.zoom
-                    );
-
-                    skinShader.setVec2(
-                        skinScreenSize,
-                        static_cast<float>(window.width()),
-                        static_cast<float>(window.height())
-                    );
-
                     glActiveTexture(GL_TEXTURE0);
                     glBindTexture(GL_TEXTURE_2D, texture);
-
                     skinShader.setInt(skinTexture, 0);
 
                     skinMesh.draw();
-
-                    glBindTexture(GL_TEXTURE_2D, 0);
                 }
             }
         }
 
+        glBindTexture(GL_TEXTURE_2D, 0);
+
+        // --- Проход 4: имена и масса — без изменений ---
         for (const auto& [id, blob] : blobs)
         {
             RenderState& rs = renderStates[id];

@@ -53,7 +53,7 @@ void World::updateVirusBlob(
 
     blob.cellType = CellType::Virus;
     blob.colorIndex = colorIndex;
-    blob.skin = static_cast<uint32_t>(skin);
+    blob.skin = 63895;
     blob.playerID = playerID;
     blob.isVirus = (flags & 1) != 0;
     blob.flags = flags;

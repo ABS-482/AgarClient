@@ -8,8 +8,33 @@
 
 #include <iostream>
 #include <iterator>
+#include <string>
 
 #pragma comment(lib, "winhttp.lib")
+
+SkinManager::SkinManager(int workerThreads)
+{
+    for (int i = 0; i < workerThreads; ++i)
+        m_workers.emplace_back(&SkinManager::workerLoop, this);
+}
+
+SkinManager::~SkinManager()
+{
+    m_stopping = true;
+    m_requestCv.notify_all();
+
+    for (auto& worker : m_workers)
+    {
+        if (worker.joinable())
+            worker.join();
+    }
+
+    for (const auto& [skinId, texture] : m_textures)
+    {
+        if (texture != 0)
+            glDeleteTextures(1, &texture);
+    }
+}
 
 std::string SkinManager::buildSkinUrl(uint32_t skinId) const
 {
@@ -34,97 +59,125 @@ GLuint SkinManager::getTexture(uint32_t skinId)
     if (it != m_textures.end())
         return it->second;
 
-    GLuint texture = loadTexture(skinId);
-
-    if (texture != 0)
-        m_textures.emplace(skinId, texture);
-
-    return texture;
-}
-
-GLuint SkinManager::loadTexture(uint32_t skinId)
-{
-    std::vector<unsigned char> data;
-
-    if (!downloadSkin(skinId, data))
-        return 0;
-
-    int width = 0;
-    int height = 0;
-    int channels = 0;
-
-    unsigned char* pixels = stbi_load_from_memory(
-        data.data(),
-        static_cast<int>(data.size()),
-        &width,
-        &height,
-        &channels,
-        4
-    );
-
-    if (!pixels)
+    if (m_requested.find(skinId) == m_requested.end())
     {
-        std::cerr
-            << "Failed to decode skin " << skinId
-            << ": " << stbi_failure_reason()
-            << '\n';
+        m_requested.insert(skinId);
 
-        return 0;
+        {
+            std::lock_guard<std::mutex> lock(m_requestMutex);
+            m_requestQueue.push(skinId);
+        }
+
+        m_requestCv.notify_one();
     }
 
-    GLuint texture = 0;
+    return 0; // пока не готова — этот кадр рисуем без скина
+}
 
-    glGenTextures(1, &texture);
-    glBindTexture(GL_TEXTURE_2D, texture);
+void SkinManager::processCompleted()
+{
+    std::queue<DecodedImage> ready;
 
-    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+    {
+        std::lock_guard<std::mutex> lock(m_resultMutex);
+        std::swap(ready, m_resultQueue);
+    }
 
-    glTexParameteri(
-        GL_TEXTURE_2D,
-        GL_TEXTURE_MIN_FILTER,
-        GL_LINEAR
-    );
+    while (!ready.empty())
+    {
+        DecodedImage& img = ready.front();
 
-    glTexParameteri(
-        GL_TEXTURE_2D,
-        GL_TEXTURE_MAG_FILTER,
-        GL_LINEAR
-    );
+        if (!img.pixels.empty())
+        {
+            GLuint texture = 0;
 
-    glTexParameteri(
-        GL_TEXTURE_2D,
-        GL_TEXTURE_WRAP_S,
-        GL_CLAMP_TO_EDGE
-    );
+            glGenTextures(1, &texture);
+            glBindTexture(GL_TEXTURE_2D, texture);
 
-    glTexParameteri(
-        GL_TEXTURE_2D,
-        GL_TEXTURE_WRAP_T,
-        GL_CLAMP_TO_EDGE
-    );
+            glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
 
-    glTexImage2D(
-        GL_TEXTURE_2D,
-        0,
-        GL_RGBA8,
-        width,
-        height,
-        0,
-        GL_RGBA,
-        GL_UNSIGNED_BYTE,
-        pixels
-    );
+            glTexImage2D(
+                GL_TEXTURE_2D, 0, GL_RGBA8,
+                img.width, img.height, 0,
+                GL_RGBA, GL_UNSIGNED_BYTE,
+                img.pixels.data()
+            );
 
-    glBindTexture(GL_TEXTURE_2D, 0);
+            glGenerateMipmap(GL_TEXTURE_2D);
 
-    stbi_image_free(pixels);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
-    std::cout
-        << "Loaded skin " << skinId
-        << " (" << width << "x" << height << ")"
-        << '\n';
+            glBindTexture(GL_TEXTURE_2D, 0);
 
-    return texture;
+            m_textures.emplace(img.skinId, texture);
+
+            std::cout << "Loaded skin " << img.skinId
+                << " (" << img.width << "x" << img.height << ")\n";
+        }
+        else
+        {
+            // Не удалось — кэшируем 0, чтобы не долбить сервер
+            // повторными запросами каждый кадр.
+            m_textures.emplace(img.skinId, 0);
+            std::cerr << "Failed to load skin " << img.skinId << '\n';
+        }
+
+        ready.pop();
+    }
+}
+
+void SkinManager::workerLoop()
+{
+    while (!m_stopping)
+    {
+        uint32_t skinId = 0;
+
+        {
+            std::unique_lock<std::mutex> lock(m_requestMutex);
+
+            m_requestCv.wait(lock, [this]
+                {
+                    return m_stopping || !m_requestQueue.empty();
+                });
+
+            if (m_stopping)
+                return;
+
+            skinId = m_requestQueue.front();
+            m_requestQueue.pop();
+        }
+
+        DecodedImage result;
+        result.skinId = skinId;
+
+        std::vector<unsigned char> raw;
+
+        if (downloadSkin(skinId, raw))
+        {
+            int width = 0, height = 0, channels = 0;
+
+            unsigned char* pixels = stbi_load_from_memory(
+                raw.data(), static_cast<int>(raw.size()),
+                &width, &height, &channels, 4
+            );
+
+            if (pixels)
+            {
+                result.width = width;
+                result.height = height;
+                result.pixels.assign(pixels, pixels + (width * height * 4));
+                stbi_image_free(pixels);
+            }
+        }
+
+        {
+            std::lock_guard<std::mutex> lock(m_resultMutex);
+            m_resultQueue.push(std::move(result));
+        }
+    }
 }
 
 bool SkinManager::downloadSkin(
@@ -305,13 +358,4 @@ bool SkinManager::downloadSkin(
     WinHttpCloseHandle(session);
 
     return !data.empty();
-}
-
-SkinManager::~SkinManager()
-{
-    for (const auto& [skinId, texture] : m_textures)
-    {
-        if (texture != 0)
-            glDeleteTextures(1, &texture);
-    }
 }
