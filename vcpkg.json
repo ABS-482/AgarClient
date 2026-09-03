@@ -5,6 +5,7 @@
     "sdl3",
     "glad",
     "ixwebsocket",
-    "nlohmann-json"
+    "nlohmann-json",
+    "stb"
   ]
 }

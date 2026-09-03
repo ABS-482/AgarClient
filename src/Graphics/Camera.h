@@ -36,4 +36,10 @@ public:
         float screenWidth, float screenHeight,
         float& outWorldX, float& outWorldY
     ) const;
+
+    void worldToScreen(
+        float worldX, float worldY,
+        float screenWidth, float screenHeight,
+        float& outScreenX, float& outScreenY
+    ) const;
 };

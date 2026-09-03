@@ -10,6 +10,9 @@
 #include "Graphics/Camera.h"
 #include "Graphics/Shaders/CircleShader.h"
 #include "Graphics/PlayerColors.h"
+#include "Graphics/Font.h"
+#include "Graphics/TextRenderer.h"
+#include "Graphics/Shaders/TextShader.h"
 #include "Input/InputManager.h"
 #include "Input/InputState.h"
 #include "Network/NetworkClient.h"
@@ -59,6 +62,9 @@ int main()
 
     Window window("AgarClient", 1280, 720);
 
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
     if (!window.isValid())
     {
         ix::uninitNetSystem();
@@ -66,6 +72,10 @@ int main()
     }
 
     Shader circleShader(CircleShader::vertex, CircleShader::fragment);
+
+    Font font("C:/Windows/Fonts/arial.ttf", 70.0f);
+    Shader textShader(TextShader::vertex, TextShader::fragment);
+    TextRenderer textRenderer;
 
     GLint uCenter = circleShader.uniformLocation("uCenter");
     GLint uRadius = circleShader.uniformLocation("uRadius");
@@ -98,7 +108,7 @@ int main()
     PacketHandler packetHandler(9, world);
 
     NetworkClient network(packetHandler);
-    network.connect("wss://megasplit1.petridish.pw");
+    network.connect("wss://megasplit5k5.petridish.pw");
     network.setPlayerPassword("");
 
     InputManager inputManager;
@@ -190,6 +200,89 @@ int main()
             circleShader.setVec3(uColor, rgb.r / 255.0f, rgb.g / 255.0f, rgb.b / 255.0f);
 
             circleMesh.draw();
+        }
+
+        for (const auto& [id, blob] : blobs)
+        {
+            RenderState& rs = renderStates[id];
+
+            // Имя
+            if (!blob.name.empty())
+            {
+                float screenX, screenY;
+                camera.worldToScreen(
+                    rs.x, rs.y,
+                    window.width(), window.height(),
+                    screenX, screenY
+                );
+
+                float nameSize = std::max(std::floor(0.3f * rs.size), 24.0f);
+                float fontScale = (nameSize * camera.zoom) / 70.0f;
+
+                textRenderer.drawCentered(
+                    font,
+                    textShader,
+                    blob.name,
+                    screenX,
+                    screenY,
+                    static_cast<float>(window.width()),
+                    static_cast<float>(window.height()),
+                    1.0f, 1.0f, 1.0f,
+                    fontScale
+                );
+            }
+
+            // Масса
+            if (blob.cellType == CellType::Player ||
+                blob.cellType == CellType::Virus)
+            {
+                float f10 = std::max(
+                    rs.size * 0.2f,
+                    std::log2(1.0f + rs.size / 50.0f) * 25.0f
+                ) * 1.2f;
+
+                float massFontSize;
+                float massWorldY;
+
+                if (blob.cellType == CellType::Virus)
+                {
+                    massFontSize = f10 * 1.4f;
+                    massWorldY = rs.y;
+                }
+                else
+                {
+                    massFontSize = f10 * 0.8f;
+                    massWorldY = rs.y + 50.0f * rs.size / 100.0f;
+                }
+
+                int score = static_cast<int>(
+                    std::ceil(rs.size * rs.size / 100.0f)
+                    );
+
+                std::string massText = std::to_string(score);
+
+                float massScreenX, massScreenY;
+                camera.worldToScreen(
+                    rs.x, massWorldY,
+                    window.width(), window.height(),
+                    massScreenX, massScreenY
+                );
+
+                float massFontScale =
+                    (massFontSize * camera.zoom) / 70.0f;
+
+                textRenderer.drawCentered(
+                    font,
+                    textShader,
+                    massText,
+                    massScreenX,
+                    massScreenY,
+                    static_cast<float>(window.width()),
+                    static_cast<float>(window.height()),
+                    1.0f, 1.0f, 1.0f,
+                    massFontScale
+                );
+            }
         }
 
         for (auto it = renderStates.begin(); it != renderStates.end(); )

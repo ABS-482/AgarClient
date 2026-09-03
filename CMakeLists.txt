@@ -15,6 +15,8 @@ find_package(glad CONFIG REQUIRED)
 
 find_package(ixwebsocket CONFIG REQUIRED)
 
+find_package(Stb REQUIRED)
+
 add_executable(AgarClient
     src/main.cpp
     src/Graphics/Window.cpp
@@ -23,6 +25,8 @@ add_executable(AgarClient
     src/Graphics/CircleMesh.cpp
     src/Graphics/PlayerColors.cpp
     src/Graphics/Camera.cpp
+    src/Graphics/Font.cpp
+    src/Graphics/TextRenderer.cpp
     src/Input/InputManager.cpp
     src/Core/FrameStats.cpp
     src/Network/NetworkClient.cpp
@@ -37,3 +41,5 @@ target_link_libraries(AgarClient PRIVATE
     ixwebsocket::ixwebsocket
     bcrypt
 )
+
+target_include_directories(AgarClient PRIVATE ${Stb_INCLUDE_DIR})

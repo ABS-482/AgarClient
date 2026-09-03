@@ -1,3 +1,4 @@
+
 #include "Camera.h"
 
 #include <algorithm>
@@ -16,10 +17,10 @@ void Camera::fitToBlobs(const std::unordered_map<uint32_t, Blob>& blobs)
 
     for (const auto& [id, blob] : blobs)
     {
-        minX = std::min(minX, blob.x);
-        maxX = std::max(maxX, blob.x);
-        minY = std::min(minY, blob.y);
-        maxY = std::max(maxY, blob.y);
+        minX = std::min(minX, blob.targetX);
+        maxX = std::max(maxX, blob.targetX);
+        minY = std::min(minY, blob.targetY);
+        maxY = std::max(maxY, blob.targetY);
     }
 
     targetX = (minX + maxX) * 0.5f;
@@ -55,4 +56,14 @@ void Camera::screenToWorld(
 {
     outWorldX = (screenX - screenWidth * 0.5f) / zoom + x;
     outWorldY = (screenY - screenHeight * 0.5f) / zoom + y;
+}
+
+void Camera::worldToScreen(
+    float worldX, float worldY,
+    float screenWidth, float screenHeight,
+    float& outScreenX, float& outScreenY
+) const
+{
+    outScreenX = (worldX - x) * zoom + screenWidth * 0.5f;
+    outScreenY = (worldY - y) * zoom + screenHeight * 0.5f;
 }

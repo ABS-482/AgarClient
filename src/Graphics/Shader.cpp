@@ -53,6 +53,11 @@ void Shader::setFloat(GLint location, float value) const
     glUniform1f(location, value);
 }
 
+void Shader::setInt(GLint location, int value) const
+{
+    glUniform1i(location, value);
+}
+
 void Shader::setVec2(GLint location, float x, float y) const
 {
     glUniform2f(location, x, y);
