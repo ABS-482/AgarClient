@@ -57,6 +57,11 @@ void TextRenderer::drawCentered(
     shader.setInt(shader.uniformLocation("uAtlas"), 0);
     shader.setVec2(shader.uniformLocation("uScreenSize"), screenWidth, screenHeight);
     shader.setFloat(shader.uniformLocation("uScale"), fontScale);
+    shader.setVec2(shader.uniformLocation("uOffset"), baseOffsetX, baseOffsetY);
+
+    shader.setVec3(shader.uniformLocation("uColor"), r, g, b);
+    shader.setVec3(shader.uniformLocation("uBorderColor"), 0.0f, 0.0f, 0.0f);
+    shader.setFloat(shader.uniformLocation("uAlphaMultiplier"), 1.0f);
 
     glBindVertexArray(m_vao);
     glBindBuffer(GL_ARRAY_BUFFER, m_vbo);
@@ -66,9 +71,6 @@ void TextRenderer::drawCentered(
         vertices.data(),
         GL_DYNAMIC_DRAW
     );
-
-    shader.setVec3(shader.uniformLocation("uColor"), r, g, b);
-    shader.setVec2(shader.uniformLocation("uOffset"), baseOffsetX, baseOffsetY);
 
     glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(vertices.size() / 4));
 

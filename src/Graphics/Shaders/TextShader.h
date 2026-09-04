@@ -35,13 +35,25 @@ namespace TextShader
 
         uniform sampler2D uAtlas;
         uniform vec3 uColor;
+        uniform vec3 uBorderColor;
+        uniform float uAlphaMultiplier;
 
         out vec4 FragColor;
 
         void main()
         {
-            float alpha = texture(uAtlas, vUV).r;
-            FragColor = vec4(uColor, alpha);
+            vec2 rg = texture(uAtlas, vUV).rg;
+
+            float fill = rg.r;
+            float shape = max(rg.g, rg.r);
+
+            vec3 color = mix(uBorderColor, uColor, fill);
+            float alpha = shape * uAlphaMultiplier;
+
+            if (alpha <= 0.0)
+                discard;
+
+            FragColor = vec4(color, alpha);
         }
     )";
 }

@@ -4,13 +4,23 @@
 #include <stb_truetype.h>
 
 #include <string>
+#include <unordered_map>
 #include <vector>
 
-// Один запечённый ASCII-атлас шрифта (символы 32..127).
+struct GlyphInfo
+{
+    float u0 = 0.0f, v0 = 0.0f, u1 = 0.0f, v1 = 0.0f;
+    float width = 0.0f, height = 0.0f;
+    float xoff = 0.0f, yoff = 0.0f;
+    float advance = 0.0f;
+};
+
 class Font
 {
 public:
-    Font(const std::string& ttfPath, float pixelHeight);
+    // borderPixels — ширина обводки в пикселях запекания (при pixelHeight),
+    // как borderWidth=1.0f в Java для BLOB-шрифта.
+    Font(const std::string& ttfPath, float pixelHeight, float borderPixels = 1.0f);
     ~Font();
 
     Font(const Font&) = delete;
@@ -18,9 +28,6 @@ public:
 
     GLuint textureId() const { return m_texture; }
 
-    // Строит вершины (x, y, u, v) для строки, начиная с (x, y) —
-    // y это базовая линия текста (baseline), как в stb_truetype.
-    // Возвращает итоговую ширину строки в пикселях.
     float buildQuads(
         const std::string& text,
         float x, float y,
@@ -28,11 +35,12 @@ public:
     ) const;
 
 private:
-    static constexpr int m_atlasWidth = 512;
-    static constexpr int m_atlasHeight = 512;
+    static constexpr int m_atlasWidth = 1024;
+    static constexpr int m_atlasHeight = 1024;
     static constexpr int m_firstChar = 32;
     static constexpr int m_numChars = 96;
+    static constexpr int m_padding = 8;
 
     GLuint m_texture = 0;
-    std::vector<stbtt_bakedchar> m_bakedChars;
+    std::unordered_map<int, GlyphInfo> m_glyphs;
 };

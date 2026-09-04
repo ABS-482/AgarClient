@@ -78,7 +78,7 @@ int main()
     Shader skinShader(SkinShader::vertex, SkinShader::fragment);
     SkinMesh skinMesh;
 
-    Font font("C:/dev/AgarClient/assets/fonts/arial.otf", 70.0f);
+    Font font("C:/dev/AgarClient/assets/fonts/arial.otf", 70.0f, 1.0f);
     Shader textShader(TextShader::vertex, TextShader::fragment);
     TextRenderer textRenderer;
 
@@ -140,8 +140,6 @@ int main()
         auto blobs = world.snapshot();
 
         skinManager.processCompleted();
-
-        camera.fitToBlobs(blobs);
 
         if (input.mouseWheel != 0.0f)
         {
