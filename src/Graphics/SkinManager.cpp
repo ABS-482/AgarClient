@@ -18,6 +18,14 @@ SkinManager::SkinManager(int workerThreads)
 
     m_textures.emplace(63895, bombTexture);
 
+    m_httpSession = WinHttpOpen(
+        L"AgarClient/1.0",
+        WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
+        WINHTTP_NO_PROXY_NAME,
+        WINHTTP_NO_PROXY_BYPASS,
+        0
+    );
+
     for (int i = 0; i < workerThreads; ++i)
         m_workers.emplace_back(&SkinManager::workerLoop, this);
 }
@@ -31,6 +39,15 @@ SkinManager::~SkinManager()
     {
         if (worker.joinable())
             worker.join();
+    }
+
+    if (m_httpSession)
+    {
+        WinHttpCloseHandle(
+            reinterpret_cast<HINTERNET>(m_httpSession)
+        );
+
+        m_httpSession = nullptr;
     }
 
     for (const auto& [skinId, texture] : m_textures)
@@ -311,13 +328,8 @@ bool SkinManager::downloadSkin(
         return false;
     }
 
-    HINTERNET session = WinHttpOpen(
-        L"AgarClient/1.0",
-        WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
-        WINHTTP_NO_PROXY_NAME,
-        WINHTTP_NO_PROXY_BYPASS,
-        0
-    );
+    HINTERNET session =
+        reinterpret_cast<HINTERNET>(m_httpSession);
 
     if (!session)
         return false;
@@ -331,7 +343,6 @@ bool SkinManager::downloadSkin(
 
     if (!connection)
     {
-        WinHttpCloseHandle(session);
         return false;
     }
 
@@ -353,7 +364,6 @@ bool SkinManager::downloadSkin(
     if (!request)
     {
         WinHttpCloseHandle(connection);
-        WinHttpCloseHandle(session);
         return false;
     }
 
@@ -372,7 +382,6 @@ bool SkinManager::downloadSkin(
     {
         WinHttpCloseHandle(request);
         WinHttpCloseHandle(connection);
-        WinHttpCloseHandle(session);
         return false;
     }
 
@@ -390,7 +399,6 @@ bool SkinManager::downloadSkin(
     {
         WinHttpCloseHandle(request);
         WinHttpCloseHandle(connection);
-        WinHttpCloseHandle(session);
         return false;
     }
 
@@ -404,7 +412,6 @@ bool SkinManager::downloadSkin(
 
         WinHttpCloseHandle(request);
         WinHttpCloseHandle(connection);
-        WinHttpCloseHandle(session);
         return false;
     }
 
@@ -444,7 +451,6 @@ bool SkinManager::downloadSkin(
 
     WinHttpCloseHandle(request);
     WinHttpCloseHandle(connection);
-    WinHttpCloseHandle(session);
 
     return !data.empty();
 }

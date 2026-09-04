@@ -2,10 +2,17 @@
 
 #include <glad/glad.h>
 
-#include <vector>
-
-TextRenderer::TextRenderer()
+TextRenderer::TextRenderer(Shader& shader)
+    : m_shader(shader)
 {
+    m_uAtlas = shader.uniformLocation("uAtlas");
+    m_uScreenSize = shader.uniformLocation("uScreenSize");
+    m_uScale = shader.uniformLocation("uScale");
+    m_uOffset = shader.uniformLocation("uOffset");
+    m_uColor = shader.uniformLocation("uColor");
+    m_uBorderColor = shader.uniformLocation("uBorderColor");
+    m_uAlphaMultiplier = shader.uniformLocation("uAlphaMultiplier");
+
     glGenVertexArrays(1, &m_vao);
     glGenBuffers(1, &m_vbo);
 
@@ -20,6 +27,8 @@ TextRenderer::TextRenderer()
 
     glBindBuffer(GL_ARRAY_BUFFER, 0);
     glBindVertexArray(0);
+
+    m_vertexScratch.reserve(256);
 }
 
 TextRenderer::~TextRenderer()
@@ -30,7 +39,6 @@ TextRenderer::~TextRenderer()
 
 void TextRenderer::drawCentered(
     const Font& font,
-    Shader& shader,
     const std::string& text,
     float screenCenterX, float screenCenterY,
     float screenWidth, float screenHeight,
@@ -38,10 +46,11 @@ void TextRenderer::drawCentered(
     float fontScale
 )
 {
-    std::vector<float> vertices;
-    float width = font.buildQuads(text, 0.0f, 0.0f, vertices);
+    m_vertexScratch.clear(); // не освобождает память, только сбрасывает размер
 
-    if (vertices.empty())
+    float width = font.buildQuads(text, 0.0f, 0.0f, m_vertexScratch);
+
+    if (m_vertexScratch.empty())
         return;
 
     float scaledWidth = width * fontScale;
@@ -49,30 +58,30 @@ void TextRenderer::drawCentered(
     float baseOffsetX = screenCenterX - scaledWidth * 0.5f;
     float baseOffsetY = screenCenterY + (70.0f * fontScale) / 3.0f;
 
-    shader.use();
+    m_shader.use();
 
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, font.textureId());
 
-    shader.setInt(shader.uniformLocation("uAtlas"), 0);
-    shader.setVec2(shader.uniformLocation("uScreenSize"), screenWidth, screenHeight);
-    shader.setFloat(shader.uniformLocation("uScale"), fontScale);
-    shader.setVec2(shader.uniformLocation("uOffset"), baseOffsetX, baseOffsetY);
+    m_shader.setInt(m_uAtlas, 0);
+    m_shader.setVec2(m_uScreenSize, screenWidth, screenHeight);
+    m_shader.setFloat(m_uScale, fontScale);
+    m_shader.setVec2(m_uOffset, baseOffsetX, baseOffsetY);
 
-    shader.setVec3(shader.uniformLocation("uColor"), r, g, b);
-    shader.setVec3(shader.uniformLocation("uBorderColor"), 0.0f, 0.0f, 0.0f);
-    shader.setFloat(shader.uniformLocation("uAlphaMultiplier"), 1.0f);
+    m_shader.setVec3(m_uColor, r, g, b);
+    m_shader.setVec3(m_uBorderColor, 0.0f, 0.0f, 0.0f);
+    m_shader.setFloat(m_uAlphaMultiplier, 1.0f);
 
     glBindVertexArray(m_vao);
     glBindBuffer(GL_ARRAY_BUFFER, m_vbo);
     glBufferData(
         GL_ARRAY_BUFFER,
-        vertices.size() * sizeof(float),
-        vertices.data(),
+        m_vertexScratch.size() * sizeof(float),
+        m_vertexScratch.data(),
         GL_DYNAMIC_DRAW
     );
 
-    glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(vertices.size() / 4));
+    glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(m_vertexScratch.size() / 4));
 
     glBindVertexArray(0);
     glBindTexture(GL_TEXTURE_2D, 0);

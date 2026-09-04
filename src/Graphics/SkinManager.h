@@ -39,6 +39,7 @@ private:
     };
 
     void workerLoop();
+    void* m_httpSession = nullptr; // HINTERNET, храним как void* чтобы не тянуть windows.h в заголовок
     std::string buildSkinUrl(uint32_t skinId) const;
     bool downloadSkin(uint32_t skinId, std::vector<unsigned char>& data);
     GLuint loadLocalTexture(const char* path);

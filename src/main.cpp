@@ -80,7 +80,7 @@ int main()
 
     Font font("C:/dev/AgarClient/assets/fonts/arial.otf", 70.0f, 1.0f);
     Shader textShader(TextShader::vertex, TextShader::fragment);
-    TextRenderer textRenderer;
+    TextRenderer textRenderer(textShader);
 
     GLint uCenter = circleShader.uniformLocation("uCenter");
     GLint uRadius = circleShader.uniformLocation("uRadius");
@@ -119,10 +119,19 @@ int main()
 
     std::unordered_map<uint32_t, RenderState> renderStates;
 
+    struct DrawEntry
+    {
+        uint32_t id;
+        const Blob* blob;
+        RenderState* rs;
+    };
+
+    std::vector<DrawEntry> drawList;
+
     PacketHandler packetHandler(9, world);
 
     NetworkClient network(packetHandler);
-    network.connect("wss://megasplit5k1.petridish.pw");
+    network.connect("wss://megasplit1.petridish.pw");
     network.setPlayerPassword("");
 
     InputManager inputManager;
@@ -197,13 +206,12 @@ int main()
 
         auto now = std::chrono::steady_clock::now();
 
-        // --- Проход 1: обновляем RenderState для всех сущностей ---
-// (без рисования — только пересчёт интерполированных позиций,
-// чтобы обе последующие стадии рендера использовали одни и те же
-// rs.x/rs.y/rs.size за этот кадр)
-        for (const auto& [id, blob] : blobs)
+        drawList.clear();
+        drawList.reserve(blobs->size());
+
+        for (const auto& [id, blob] : *blobs)
         {
-            RenderState& rs = renderStates[id];
+            RenderState& rs = renderStates[id]; // ОДИН поиск на сущность за кадр
 
             if (!rs.initialized)
             {
@@ -236,30 +244,15 @@ int main()
             rs.x = rs.prevX + (blob.targetX - rs.prevX) * t;
             rs.y = rs.prevY + (blob.targetY - rs.prevY) * t;
             rs.size = rs.prevSize + (blob.targetSize - rs.prevSize) * t;
-        }
 
-        // --- Формируем порядок отрисовки: крупные сущности первыми ("сзади"),
-        // мелкие последними ("сверху") — как в оригинальной игре ---
-        struct DrawEntry
-        {
-            uint32_t id;
-            const Blob* blob;
-            float size;
-        };
-
-        std::vector<DrawEntry> drawList;
-        drawList.reserve(blobs.size());
-
-        for (const auto& [id, blob] : blobs)
-        {
-            drawList.push_back({ id, &blob, renderStates[id].size });
+            drawList.push_back({ id, &blob, &rs });
         }
 
         std::sort(
             drawList.begin(), drawList.end(),
             [](const DrawEntry& a, const DrawEntry& b)
             {
-                return a.size < b.size;
+                return a.rs->size < b.rs->size;
             }
         );
 
@@ -286,7 +279,7 @@ int main()
         for (const auto& entry : drawList)
         {
             const Blob& blob = *entry.blob;
-            RenderState& rs = renderStates[entry.id];
+            RenderState& rs = *entry.rs; // просто разыменование, без поиска в hash-map
 
             // --- Круг ---
             circleShader.use();
@@ -359,7 +352,7 @@ int main()
                 float fontScale = (nameSize * camera.zoom) / 70.0f;
 
                 textRenderer.drawCentered(
-                    font, textShader, blob.name,
+                    font, blob.name,
                     screenX, screenY,
                     static_cast<float>(window.width()),
                     static_cast<float>(window.height()),
@@ -403,7 +396,7 @@ int main()
                 float massFontScale = (massFontSize * camera.zoom) / 70.0f;
 
                 textRenderer.drawCentered(
-                    font, textShader, massText,
+                    font, massText,
                     massScreenX, massScreenY,
                     static_cast<float>(window.width()),
                     static_cast<float>(window.height()),
@@ -417,7 +410,7 @@ int main()
 
         for (auto it = renderStates.begin(); it != renderStates.end(); )
         {
-            if (blobs.find(it->first) == blobs.end())
+            if (blobs->find(it->first) == blobs->end()) // было blobs.find/blobs.end
                 it = renderStates.erase(it);
             else
                 ++it;
@@ -433,7 +426,7 @@ int main()
             title << "AgarClient | "
                 << std::fixed << std::setprecision(0) << stats.fps()
                 << " FPS | avg " << std::setprecision(3) << stats.averageFrameTimeMs()
-                << " ms | entities " << blobs.size()
+                << " ms | entities " << blobs->size()
                 << " | zoom " << std::setprecision(4) << camera.zoom;
 
             window.setTitle(title.str());

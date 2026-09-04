@@ -26,6 +26,8 @@ void World::updateFoodBlob(
     blob.skin = 0;
     blob.isVirus = false;
     blob.flags = 0;
+
+    ++m_version;
 }
 
 void World::updateVirusBlob(
@@ -62,6 +64,8 @@ void World::updateVirusBlob(
         blob.name = name;
 
     blob.sticker = 0;
+
+    ++m_version;
 }
 
 void World::updatePlayerBlob(
@@ -127,6 +131,7 @@ void World::updatePlayerBlob(
         if (!alreadyTracked)
             ownedIds.push_back(id);
     }
+    ++m_version;
 }
 
 void World::setPlayerName(uint16_t playerID, const std::string& name)
@@ -170,6 +175,7 @@ void World::removeBlob(uint32_t id)
 {
     std::lock_guard<std::mutex> lock(m_mutex);
     m_blobs.erase(id);
+    ++m_version;
 }
 
 void World::setMapBounds(double minX, double minY, double maxX, double maxY)
@@ -195,8 +201,15 @@ void World::removePlayerMeta(uint16_t playerID)
     playerColorIndexes.erase(playerID);
 }
 
-std::unordered_map<uint32_t, Blob> World::snapshot() const
+WorldSnapshot World::snapshot() const
 {
     std::lock_guard<std::mutex> lock(m_mutex);
-    return m_blobs; // копия под локом — короткая блокировка
+
+    if (!m_cachedSnapshot || m_cachedVersion != m_version)
+    {
+        m_cachedSnapshot = std::make_shared<std::unordered_map<uint32_t, Blob>>(m_blobs);
+        m_cachedVersion = m_version;
+    }
+
+    return m_cachedSnapshot;
 }
