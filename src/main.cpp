@@ -265,8 +265,26 @@ int main()
             circleShader.setVec2(uCenter, rs.x, rs.y);
             circleShader.setFloat(uRadius, rs.size);
 
-            RGB rgb = getPlayerColor(blob.colorIndex);
-            circleShader.setVec3(uColor, rgb.r / 255.0f, rgb.g / 255.0f, rgb.b / 255.0f);
+            if (blob.cellType == CellType::Virus)
+            {
+                circleShader.setVec3(
+                    uColor,
+                    1.0f,
+                    153.0f / 255.0f,
+                    0.0f
+                );
+            }
+            else
+            {
+                RGB rgb = getPlayerColor(blob.colorIndex);
+
+                circleShader.setVec3(
+                    uColor,
+                    rgb.r / 255.0f,
+                    rgb.g / 255.0f,
+                    rgb.b / 255.0f
+                );
+            }
 
             circleMesh.draw();
 

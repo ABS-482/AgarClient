@@ -14,6 +14,10 @@
 
 SkinManager::SkinManager(int workerThreads)
 {
+    GLuint bombTexture = loadLocalTexture("C:/dev/AgarClient/assets/skins/bomb.png");
+
+    m_textures.emplace(63895, bombTexture);
+
     for (int i = 0; i < workerThreads; ++i)
         m_workers.emplace_back(&SkinManager::workerLoop, this);
 }
@@ -47,6 +51,91 @@ std::string SkinManager::buildSkinUrl(uint32_t skinId) const
         "cached.petri-dish.ru/engine/serverskins/" +
         id +
         ".png";
+}
+
+GLuint SkinManager::loadLocalTexture(const char* path)
+{
+    int width = 0;
+    int height = 0;
+    int channels = 0;
+
+    unsigned char* pixels = stbi_load(
+        path,
+        &width,
+        &height,
+        &channels,
+        4
+    );
+
+    if (!pixels)
+    {
+        std::cerr
+            << "Failed to load local skin: "
+            << path
+            << " : "
+            << stbi_failure_reason()
+            << '\n';
+
+        return 0;
+    }
+
+    GLuint texture = 0;
+
+    glGenTextures(1, &texture);
+    glBindTexture(GL_TEXTURE_2D, texture);
+
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+
+    glTexImage2D(
+        GL_TEXTURE_2D,
+        0,
+        GL_RGBA8,
+        width,
+        height,
+        0,
+        GL_RGBA,
+        GL_UNSIGNED_BYTE,
+        pixels
+    );
+
+    glGenerateMipmap(GL_TEXTURE_2D);
+
+    glTexParameteri(
+        GL_TEXTURE_2D,
+        GL_TEXTURE_MIN_FILTER,
+        GL_LINEAR_MIPMAP_LINEAR
+    );
+
+    glTexParameteri(
+        GL_TEXTURE_2D,
+        GL_TEXTURE_MAG_FILTER,
+        GL_LINEAR
+    );
+
+    glTexParameteri(
+        GL_TEXTURE_2D,
+        GL_TEXTURE_WRAP_S,
+        GL_CLAMP_TO_EDGE
+    );
+
+    glTexParameteri(
+        GL_TEXTURE_2D,
+        GL_TEXTURE_WRAP_T,
+        GL_CLAMP_TO_EDGE
+    );
+
+    glBindTexture(GL_TEXTURE_2D, 0);
+
+    stbi_image_free(pixels);
+
+    std::cout
+        << "Loaded local skin "
+        << path
+        << " (" << width
+        << "x" << height
+        << ")\n";
+
+    return texture;
 }
 
 GLuint SkinManager::getTexture(uint32_t skinId)

@@ -41,6 +41,7 @@ private:
     void workerLoop();
     std::string buildSkinUrl(uint32_t skinId) const;
     bool downloadSkin(uint32_t skinId, std::vector<unsigned char>& data);
+    GLuint loadLocalTexture(const char* path);
 
     std::unordered_map<uint32_t, GLuint> m_textures; // готовые GL-текстуры
     std::unordered_set<uint32_t> m_requested;         // уже в очереди/скачивается
