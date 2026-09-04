@@ -22,8 +22,28 @@ void PacketHandler::handleMessage(const uint8_t* data, size_t size)
 
         switch (opcode)
         {
+        case 6:
+            handleColorsViaPid(reader);
+            break;
+
+        case 7:
+            handleSkinsViaPid(reader);
+            break;
+
+        case 9:
+            handleRemovePidName(reader);
+            break;
+
+        case 10:
+            handleNamesViaPid(reader);
+            break;
+
         case 11:
             handleWorldUpdate(reader);
+            break;
+
+        case 64:
+            handleMapBounds(reader);
             break;
 
         default:
@@ -38,6 +58,63 @@ void PacketHandler::handleMessage(const uint8_t* data, size_t size)
     }
 
 
+}
+
+void PacketHandler::handleColorsViaPid(PacketReader& reader)
+{
+    while (reader.hasMore())
+    {
+        uint16_t id = reader.readUint16LE();
+        uint8_t color = reader.readUint8();
+
+        if (id > 0)
+            m_world.setPlayerColorIndex(id, color);
+    }
+}
+
+void PacketHandler::handleMapBounds(PacketReader& reader)
+{
+    double minX = reader.readFloat64LE();
+    double minY = reader.readFloat64LE();
+    double maxX = reader.readFloat64LE();
+    double maxY = reader.readFloat64LE();
+
+    m_world.setMapBounds(minX, minY, maxX, maxY);
+}
+
+void PacketHandler::handleSkinsViaPid(PacketReader& reader)
+{
+    while (reader.hasMore())
+    {
+        uint16_t id = reader.readUint16LE();
+        uint32_t skin = reader.readUint32LE();
+
+        if (id > 0)
+            m_world.setPlayerSkin(id, skin);
+    }
+}
+
+void PacketHandler::handleRemovePidName(PacketReader& reader)
+{
+    if (!reader.hasMore())
+        return;
+
+    uint16_t id = reader.readUint16LE();
+
+    if (id > 0)
+        m_world.removePlayerMeta(id);
+}
+
+void PacketHandler::handleNamesViaPid(PacketReader& reader)
+{
+    while (reader.hasMore())
+    {
+        uint16_t id = reader.readUint16LE();
+        std::string name = reader.readUtf16String();
+
+        if (id > 0)
+            m_world.setPlayerName(id, name);
+    }
 }
 
 void PacketHandler::handleWorldUpdate(PacketReader& reader)

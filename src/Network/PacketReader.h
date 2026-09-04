@@ -77,6 +77,28 @@ public:
         return value;
     }
 
+    uint64_t readUint64LE()
+    {
+        require(8);
+        uint64_t value = 0;
+
+        for (int i = 0; i < 8; ++i)
+        {
+            value |= static_cast<uint64_t>(m_data[m_offset + i]) << (8 * i);
+        }
+
+        m_offset += 8;
+        return value;
+    }
+
+    double readFloat64LE()
+    {
+        uint64_t bits = readUint64LE();
+        double value;
+        std::memcpy(&value, &bits, sizeof(value));
+        return value;
+    }
+
     // Аналог encode() из вашего JS-парсера:
     // null-terminated строка, 2 байта (UTF-16LE) на символ.
     std::string readUtf16String()

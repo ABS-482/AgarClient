@@ -172,6 +172,29 @@ void World::removeBlob(uint32_t id)
     m_blobs.erase(id);
 }
 
+void World::setMapBounds(double minX, double minY, double maxX, double maxY)
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+    m_mapBounds = { minX, minY, maxX, maxY, true };
+}
+
+World::MapBounds World::getMapBounds() const
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+    return m_mapBounds;
+}
+
+void World::removePlayerMeta(uint16_t playerID)
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+
+    // В точности как в JS removePidName — sticker НЕ трогаем,
+    // там удаляются только name/skin/colorIndex.
+    playerNames.erase(playerID);
+    playerSkins.erase(playerID);
+    playerColorIndexes.erase(playerID);
+}
+
 std::unordered_map<uint32_t, Blob> World::snapshot() const
 {
     std::lock_guard<std::mutex> lock(m_mutex);

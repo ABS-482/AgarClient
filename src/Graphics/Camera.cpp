@@ -1,9 +1,17 @@
-
 #include "Camera.h"
 
 #include <algorithm>
 #include <cmath>
 #include <limits>
+
+void Camera::setBounds(float minX, float minY, float maxX, float maxY)
+{
+    boundsMinX = minX;
+    boundsMinY = minY;
+    boundsMaxX = maxX;
+    boundsMaxY = maxY;
+    hasBounds = true;
+}
 
 void Camera::update(float deltaTime)
 {
@@ -12,26 +20,45 @@ void Camera::update(float deltaTime)
     x += (targetX - x) * smoothing;
     y += (targetY - y) * smoothing;
 
+    if (hasBounds)
+    {
+        x = std::clamp(x, boundsMinX, boundsMaxX);
+        y = std::clamp(y, boundsMinY, boundsMaxY);
+    }
+
     targetZoom = zoomScale * baseZoom;
 
-    // Тот же линейный lerp, что и в Java: dt * 8, зажатый в 0..1
-    // на случай очень длинных кадров (лаг-спайков).
     float zoomSmoothing = std::clamp(deltaTime * 8.0f, 0.0f, 1.0f);
     zoom += (targetZoom - zoom) * zoomSmoothing;
 
     zoom = std::clamp(zoom, minZoom, maxZoom);
 }
 
-void Camera::setManualTarget(float worldX, float worldY)
-{
-    targetX = worldX;
-    targetY = worldY;
-}
-
 void Camera::zoomBy(float wheelDelta)
 {
     zoomScale *= std::pow(1.15f, wheelDelta);
     zoomScale = std::clamp(zoomScale, minZoomScale, maxZoomScale);
+}
+
+void Camera::setManualTarget(float worldX, float worldY)
+{
+    if (hasBounds)
+    {
+        worldX = std::clamp(worldX, boundsMinX, boundsMaxX);
+        worldY = std::clamp(worldY, boundsMinY, boundsMaxY);
+    }
+
+    targetX = worldX;
+    targetY = worldY;
+}
+
+void Camera::setZoomImmediate(float desiredZoom)
+{
+    desiredZoom = std::clamp(desiredZoom, minZoom, maxZoom);
+
+    zoomScale = std::clamp(desiredZoom / baseZoom, minZoomScale, maxZoomScale);
+    targetZoom = zoomScale * baseZoom;
+    zoom = targetZoom;
 }
 
 void Camera::screenToWorld(

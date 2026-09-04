@@ -19,6 +19,11 @@ public:
 
 private:
     void handleWorldUpdate(PacketReader& reader);
+    void handleColorsViaPid(PacketReader& reader);
+    void handleSkinsViaPid(PacketReader& reader);
+    void handleRemovePidName(PacketReader& reader);
+    void handleNamesViaPid(PacketReader& reader);
+    void handleMapBounds(PacketReader& reader);
 
     int m_serverProtocol;
     World& m_world;

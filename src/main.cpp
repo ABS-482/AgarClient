@@ -131,6 +131,8 @@ int main()
 
     bool running = true;
 
+    bool mapCentered = false;
+
     while (running)
     {
         stats.beginFrame();
@@ -140,6 +142,32 @@ int main()
         auto blobs = world.snapshot();
 
         skinManager.processCompleted();
+
+        if (!mapCentered)
+        {
+            World::MapBounds bounds = world.getMapBounds();
+
+            if (bounds.valid)
+            {
+                float minX = static_cast<float>(bounds.minX);
+                float minY = static_cast<float>(bounds.minY);
+                float maxX = static_cast<float>(bounds.maxX);
+                float maxY = static_cast<float>(bounds.maxY);
+
+                float middleX = (minX + maxX) * 0.5f;
+                float middleY = (minY + maxY) * 0.5f;
+
+                camera.setBounds(minX, minY, maxX, maxY);
+                camera.setManualTarget(middleX, middleY);
+
+                camera.x = middleX;
+                camera.y = middleY;
+
+                camera.setZoomImmediate(0.0621f);
+
+                mapCentered = true;
+            }
+        }
 
         if (input.mouseWheel != 0.0f)
         {

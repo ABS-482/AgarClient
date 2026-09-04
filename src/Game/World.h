@@ -11,6 +11,16 @@
 class World
 {
 public:
+
+    struct MapBounds
+    {
+        double minX = 0.0;
+        double minY = 0.0;
+        double maxX = 0.0;
+        double maxY = 0.0;
+        bool valid = false;
+    };
+
     void updateFoodBlob(
         uint32_t id,
         int16_t x,
@@ -45,6 +55,7 @@ public:
     void setPlayerSkin(uint16_t playerID, uint32_t skin);
     void setPlayerColorIndex(uint16_t playerID, uint8_t colorIndex);
     void setPlayerSticker(uint16_t playerID, uint32_t sticker);
+    void removePlayerMeta(uint16_t playerID); // добавить сюда
     void addOwnedBlob(uint32_t id);
     void removeBlob(uint32_t id);
 
@@ -54,6 +65,8 @@ public:
     // Метаданные по playerID — доступ к ним пока не защищён мьютексом,
     // так как они не читаются напрямую из рендера (только используются
     // внутри handleWorldUpdate при сборке Blob).
+    void setMapBounds(double minX, double minY, double maxX, double maxY);
+    MapBounds getMapBounds() const;
 
 
 private:
@@ -64,4 +77,5 @@ private:
     std::unordered_map<uint16_t, uint8_t> playerColorIndexes;
     std::unordered_map<uint16_t, uint32_t> playerStickers;
     std::vector<uint32_t> ownedIds;
+    MapBounds m_mapBounds;
 };
