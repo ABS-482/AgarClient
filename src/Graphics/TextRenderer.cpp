@@ -67,31 +67,6 @@ void TextRenderer::drawCentered(
         GL_DYNAMIC_DRAW
     );
 
-    // --- Обводка: 4 прохода чёрным цветом со смещением на 1px ---
-    constexpr float outlineOffset = 0.6f;
-
-    const float offsets[4][2] =
-    {
-        { -outlineOffset, 0.0f },
-        {  outlineOffset, 0.0f },
-        { 0.0f, -outlineOffset },
-        { 0.0f,  outlineOffset }
-    };
-
-    shader.setVec3(shader.uniformLocation("uColor"), 0.0f, 0.0f, 0.0f);
-
-    for (const auto& [dx, dy] : offsets)
-    {
-        shader.setVec2(
-            shader.uniformLocation("uOffset"),
-            baseOffsetX + dx,
-            baseOffsetY + dy
-        );
-
-        glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(vertices.size() / 4));
-    }
-
-    // --- Основной текст поверх обводки ---
     shader.setVec3(shader.uniformLocation("uColor"), r, g, b);
     shader.setVec2(shader.uniformLocation("uOffset"), baseOffsetX, baseOffsetY);
 
