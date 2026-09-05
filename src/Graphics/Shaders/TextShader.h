@@ -5,22 +5,18 @@ namespace TextShader
     inline constexpr const char* vertex = R"(
         #version 330 core
 
-        layout (location = 0) in vec2 aPos;
+        layout (location = 0) in vec2 aPos; // уже в абсолютных экранных пикселях
         layout (location = 1) in vec2 aUV;
 
         uniform vec2 uScreenSize;
-        uniform vec2 uOffset;
-        uniform float uScale;
 
         out vec2 vUV;
 
         void main()
         {
-            vec2 screenPos = aPos * uScale + uOffset;
-
             vec2 ndc = vec2(
-                (screenPos.x / uScreenSize.x) * 2.0 - 1.0,
-                1.0 - (screenPos.y / uScreenSize.y) * 2.0
+                (aPos.x / uScreenSize.x) * 2.0 - 1.0,
+                1.0 - (aPos.y / uScreenSize.y) * 2.0
             );
 
             gl_Position = vec4(ndc, 0.0, 1.0);

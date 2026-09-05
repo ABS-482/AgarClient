@@ -16,6 +16,8 @@
 #include "Graphics/SkinManager.h"
 #include "Graphics/SkinMesh.h"
 #include "Graphics/Shaders/SkinShader.h"
+#include "Graphics/Shaders/CircleInstancedShader.h"
+#include "Graphics/InstancedCircleRenderer.h"
 #include "Input/InputManager.h"
 #include "Input/InputState.h"
 #include "Network/NetworkClient.h"
@@ -97,6 +99,13 @@ int main()
     GLint skinTexture = skinShader.uniformLocation("uSkin");
 
     CircleMesh circleMesh;
+    Shader circleInstancedShader(CircleInstancedShader::vertex, CircleInstancedShader::fragment);
+    GLint iCameraPos = circleInstancedShader.uniformLocation("uCameraPos");
+    GLint iZoom = circleInstancedShader.uniformLocation("uZoom");
+    GLint iScreenSize = circleInstancedShader.uniformLocation("uScreenSize");
+
+    InstancedCircleRenderer foodRenderer;
+    std::vector<float> foodInstanceData;
     Camera camera;
 
     World world;
@@ -131,7 +140,7 @@ int main()
     PacketHandler packetHandler(9, world);
 
     NetworkClient network(packetHandler);
-    network.connect("wss://megasplit1.petridish.pw");
+    network.connect("wss://megasplit5k1.petridish.pw");
     network.setPlayerPassword("");
 
     InputManager inputManager;
@@ -209,9 +218,12 @@ int main()
         drawList.clear();
         drawList.reserve(blobs->size());
 
+        foodInstanceData.clear();
+        foodInstanceData.reserve(blobs->size() * 6);
+
         for (const auto& [id, blob] : *blobs)
         {
-            RenderState& rs = renderStates[id]; // ОДИН поиск на сущность за кадр
+            RenderState& rs = renderStates[id];
 
             if (!rs.initialized)
             {
@@ -245,9 +257,22 @@ int main()
             rs.y = rs.prevY + (blob.targetY - rs.prevY) * t;
             rs.size = rs.prevSize + (blob.targetSize - rs.prevSize) * t;
 
-            drawList.push_back({ id, &blob, &rs });
+            if (blob.cellType == CellType::Food || blob.cellType == CellType::EjectedMass)
+            {
+                RGB rgb = getPlayerColor(blob.colorIndex);
+
+                foodInstanceData.insert(foodInstanceData.end(), {
+                    rs.x, rs.y, rs.size,
+                    rgb.r / 255.0f, rgb.g / 255.0f, rgb.b / 255.0f
+                    });
+            }
+            else
+            {
+                drawList.push_back({ id, &blob, &rs });
+            }
         }
 
+        // Обычная, ПРОСТАЯ и валидная сортировка — еды тут больше нет вообще.
         std::sort(
             drawList.begin(), drawList.end(),
             [](const DrawEntry& a, const DrawEntry& b)
@@ -276,10 +301,24 @@ int main()
 
         constexpr float virusFontMultiplier = 1.6f;
 
+        circleInstancedShader.use();
+        circleInstancedShader.setVec2(iCameraPos, camera.x, camera.y);
+        circleInstancedShader.setFloat(iZoom, camera.zoom);
+        circleInstancedShader.setVec2(
+            iScreenSize,
+            static_cast<float>(window.width()),
+            static_cast<float>(window.height())
+        );
+
+        foodRenderer.draw(foodInstanceData.data(), foodInstanceData.size() / 6);
+
+        textRenderer.begin();
+
         for (const auto& entry : drawList)
         {
             const Blob& blob = *entry.blob;
-            RenderState& rs = *entry.rs; // просто разыменование, без поиска в hash-map
+
+            RenderState& rs = *entry.rs;
 
             // --- Круг ---
             circleShader.use();
@@ -332,8 +371,17 @@ int main()
                 }
             }
 
+            int score = 0;
+            bool showText = true;
+
+            if (blob.cellType == CellType::Player || blob.cellType == CellType::Virus)
+            {
+                score = static_cast<int>(std::ceil(rs.size * rs.size / 100.0f));
+                showText = score >= 99;
+            }
+
             // --- Имя ---
-            if (!blob.name.empty())
+            if (showText && !blob.name.empty())
             {
                 float screenX, screenY;
                 camera.worldToScreen(
@@ -351,18 +399,11 @@ int main()
 
                 float fontScale = (nameSize * camera.zoom) / 70.0f;
 
-                textRenderer.drawCentered(
-                    font, blob.name,
-                    screenX, screenY,
-                    static_cast<float>(window.width()),
-                    static_cast<float>(window.height()),
-                    1.0f, 1.0f, 1.0f,
-                    fontScale
-                );
+                textRenderer.addText(font, blob.name, screenX, screenY, fontScale);
             }
 
             // --- Масса ---
-            if (blob.cellType == CellType::Player || blob.cellType == CellType::Virus)
+            if (showText && (blob.cellType == CellType::Player || blob.cellType == CellType::Virus))
             {
                 float f10 = std::max(
                     rs.size * 0.2f,
@@ -383,7 +424,6 @@ int main()
                     massWorldY = rs.y + 50.0f * rs.size / 100.0f;
                 }
 
-                int score = static_cast<int>(std::ceil(rs.size * rs.size / 100.0f));
                 std::string massText = std::to_string(score);
 
                 float massScreenX, massScreenY;
@@ -395,16 +435,16 @@ int main()
 
                 float massFontScale = (massFontSize * camera.zoom) / 70.0f;
 
-                textRenderer.drawCentered(
-                    font, massText,
-                    massScreenX, massScreenY,
-                    static_cast<float>(window.width()),
-                    static_cast<float>(window.height()),
-                    1.0f, 1.0f, 1.0f,
-                    massFontScale
-                );
+                textRenderer.addText(font, massText, massScreenX, massScreenY, massFontScale);
             }
         }
+
+        textRenderer.end(
+            font,
+            static_cast<float>(window.width()),
+            static_cast<float>(window.height()),
+            1.0f, 1.0f, 1.0f
+        );
 
         glBindTexture(GL_TEXTURE_2D, 0);
 

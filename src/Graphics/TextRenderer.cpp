@@ -7,8 +7,6 @@ TextRenderer::TextRenderer(Shader& shader)
 {
     m_uAtlas = shader.uniformLocation("uAtlas");
     m_uScreenSize = shader.uniformLocation("uScreenSize");
-    m_uScale = shader.uniformLocation("uScale");
-    m_uOffset = shader.uniformLocation("uOffset");
     m_uColor = shader.uniformLocation("uColor");
     m_uBorderColor = shader.uniformLocation("uBorderColor");
     m_uAlphaMultiplier = shader.uniformLocation("uAlphaMultiplier");
@@ -28,7 +26,8 @@ TextRenderer::TextRenderer(Shader& shader)
     glBindBuffer(GL_ARRAY_BUFFER, 0);
     glBindVertexArray(0);
 
-    m_vertexScratch.reserve(256);
+    m_batch.reserve(4096);
+    m_scratch.reserve(256);
 }
 
 TextRenderer::~TextRenderer()
@@ -37,51 +36,73 @@ TextRenderer::~TextRenderer()
     glDeleteVertexArrays(1, &m_vao);
 }
 
-void TextRenderer::drawCentered(
+void TextRenderer::begin()
+{
+    m_batch.clear();
+}
+
+void TextRenderer::addText(
     const Font& font,
     const std::string& text,
     float screenCenterX, float screenCenterY,
-    float screenWidth, float screenHeight,
-    float r, float g, float b,
     float fontScale
 )
 {
-    m_vertexScratch.clear(); // не освобождает память, только сбрасывает размер
+    m_scratch.clear();
 
-    float width = font.buildQuads(text, 0.0f, 0.0f, m_vertexScratch);
+    float width = font.buildQuads(text, 0.0f, 0.0f, m_scratch);
 
-    if (m_vertexScratch.empty())
+    if (m_scratch.empty())
         return;
 
-    float scaledWidth = width * fontScale;
+    float offsetX = screenCenterX - (width * fontScale) * 0.5f;
+    float offsetY = screenCenterY + (70.0f * fontScale) / 3.0f;
 
-    float baseOffsetX = screenCenterX - scaledWidth * 0.5f;
-    float baseOffsetY = screenCenterY + (70.0f * fontScale) / 3.0f;
+    // Переносим локальные (baseline-относительные) квады в абсолютные
+    // экранные координаты прямо сейчас, на CPU — раз навсегда для этой строки.
+    for (size_t i = 0; i < m_scratch.size(); i += 4)
+    {
+        float localX = m_scratch[i];
+        float localY = m_scratch[i + 1];
+        float u = m_scratch[i + 2];
+        float v = m_scratch[i + 3];
+
+        m_batch.push_back(localX * fontScale + offsetX);
+        m_batch.push_back(localY * fontScale + offsetY);
+        m_batch.push_back(u);
+        m_batch.push_back(v);
+    }
+}
+
+void TextRenderer::end(
+    const Font& font,
+    float screenWidth, float screenHeight,
+    float r, float g, float b
+)
+{
+    if (m_batch.empty())
+        return;
 
     m_shader.use();
 
-    glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, font.textureId());
-
     m_shader.setInt(m_uAtlas, 0);
     m_shader.setVec2(m_uScreenSize, screenWidth, screenHeight);
-    m_shader.setFloat(m_uScale, fontScale);
-    m_shader.setVec2(m_uOffset, baseOffsetX, baseOffsetY);
-
     m_shader.setVec3(m_uColor, r, g, b);
     m_shader.setVec3(m_uBorderColor, 0.0f, 0.0f, 0.0f);
     m_shader.setFloat(m_uAlphaMultiplier, 1.0f);
 
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, font.textureId()); // <- см. ниже про параметр font
     glBindVertexArray(m_vao);
     glBindBuffer(GL_ARRAY_BUFFER, m_vbo);
     glBufferData(
         GL_ARRAY_BUFFER,
-        m_vertexScratch.size() * sizeof(float),
-        m_vertexScratch.data(),
+        m_batch.size() * sizeof(float),
+        m_batch.data(),
         GL_DYNAMIC_DRAW
     );
 
-    glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(m_vertexScratch.size() / 4));
+    glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(m_batch.size() / 4));
 
     glBindVertexArray(0);
     glBindTexture(GL_TEXTURE_2D, 0);

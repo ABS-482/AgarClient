@@ -9,21 +9,29 @@
 class TextRenderer
 {
 public:
-    // Локации uniform'ов кэшируются один раз, привязка к конкретному
-    // шейдеру (у вас textShader — один на весь текст, это безопасно).
     explicit TextRenderer(Shader& shader);
     ~TextRenderer();
 
     TextRenderer(const TextRenderer&) = delete;
     TextRenderer& operator=(const TextRenderer&) = delete;
 
-    void drawCentered(
+    // Вызвать один раз в начале кадра — очищает накопленный батч.
+    void begin();
+
+    // Добавляет квады строки в общий батч. НИЧЕГО не рисует сразу.
+    void addText(
         const Font& font,
         const std::string& text,
         float screenCenterX, float screenCenterY,
-        float screenWidth, float screenHeight,
-        float r, float g, float b,
         float fontScale
+    );
+
+    // Один-единственный draw call на ВЕСЬ накопленный за кадр текст.
+    void end(
+        const Font& font,
+        float screenWidth,
+        float screenHeight,
+        float r, float g, float b
     );
 
 private:
@@ -31,8 +39,6 @@ private:
 
     GLint m_uAtlas;
     GLint m_uScreenSize;
-    GLint m_uScale;
-    GLint m_uOffset;
     GLint m_uColor;
     GLint m_uBorderColor;
     GLint m_uAlphaMultiplier;
@@ -40,5 +46,6 @@ private:
     unsigned int m_vao = 0;
     unsigned int m_vbo = 0;
 
-    std::vector<float> m_vertexScratch; // переиспользуемый буфер, без аллокаций на каждый вызов
+    std::vector<float> m_batch;   // общий буфер за весь кадр: x, y, u, v на вершину
+    std::vector<float> m_scratch; // временный буфер под один вызов buildQuads
 };

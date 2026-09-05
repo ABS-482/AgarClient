@@ -30,6 +30,7 @@ add_executable(AgarClient
     src/Graphics/SkinManager.cpp
     src/Graphics/StbImage.cpp
     src/Graphics/SkinMesh.cpp
+    src/Graphics/InstancedCircleRenderer.cpp
     src/Input/InputManager.cpp
     src/Core/FrameStats.cpp
     src/Network/NetworkClient.cpp
