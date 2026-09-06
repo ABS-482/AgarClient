@@ -190,6 +190,26 @@ World::MapBounds World::getMapBounds() const
     return m_mapBounds;
 }
 
+void World::addChatMessage(ChatMessage message)
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+
+    m_chatMessages.push_back(std::move(message));
+
+    constexpr size_t maxMessages = 50;
+
+    if (m_chatMessages.size() > maxMessages)
+    {
+        m_chatMessages.erase(m_chatMessages.begin());
+    }
+}
+
+std::vector<ChatMessage> World::getChatMessages() const
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+    return m_chatMessages;
+}
+
 void World::removePlayerMeta(uint16_t playerID)
 {
     std::lock_guard<std::mutex> lock(m_mutex);

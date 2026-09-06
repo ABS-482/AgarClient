@@ -50,6 +50,14 @@ void PacketHandler::handleMessage(const uint8_t* data, size_t size)
             handleMapBounds(reader);
             break;
 
+        case 199:
+            handleChatMessage(reader, false);
+            break;
+
+        case 205:
+            handleChatMessage(reader, true);
+            break;
+
         default:
             std::cerr << "Unknown opcode: "
                 << static_cast<int>(opcode) << '\n';
@@ -119,6 +127,51 @@ void PacketHandler::handleNamesViaPid(PacketReader& reader)
         if (id > 0)
             m_world.setPlayerName(id, name);
     }
+}
+
+void PacketHandler::handleChatMessage(PacketReader& reader, bool isPrivate)
+{
+    ChatMessage msg;
+
+    msg.msgId = reader.readUint32LE();
+    msg.playerID = reader.readUint32LE();
+    msg.pwd = reader.readUint8();
+    msg.donateID = reader.readInt32LE();
+
+    msg.colorR = reader.readUint8();
+    msg.colorG = reader.readUint8();
+    msg.colorB = reader.readUint8();
+
+    msg.skin = reader.readUint32LE();
+    msg.userLevel = reader.readUint16LE();
+    msg.userLevelSeason = reader.readUint16LE();
+
+    msg.toxicity = reader.readUint8();
+    msg.profanity = reader.readUint8();
+    msg.insult = reader.readUint8();
+    msg.avgScore = reader.readUint8();
+
+    msg.name = reader.readUtf16String();
+    msg.message = reader.readUtf16String();
+
+    msg.isPlayerEnter = (msg.message == "***playerenter***");
+
+    if (isPrivate)
+    {
+        msg.recipient = reader.readUtf16String();
+    }
+
+    msg.isPrivate = isPrivate;
+
+    // original_message / hash — есть не всегда, пока не используем,
+    // но дочитываем, чтобы буфер был потреблён корректно.
+    if (reader.hasMore())
+        reader.readUtf16String();
+
+    if (reader.hasMore())
+        reader.readUtf16String();
+
+    m_world.addChatMessage(std::move(msg));
 }
 
 void PacketHandler::handleUsersList(PacketReader& reader)

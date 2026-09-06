@@ -31,12 +31,14 @@ add_executable(AgarClient
     src/Graphics/StbImage.cpp
     src/Graphics/SkinMesh.cpp
     src/Graphics/InstancedCircleRenderer.cpp
+    src/Graphics/UIPanel.cpp
     src/Input/InputManager.cpp
     src/Core/FrameStats.cpp
     src/Core/FrameLimiter.cpp
     src/Network/NetworkClient.cpp
     src/Network/PacketHandler.cpp
     src/Game/World.cpp
+    src/Game/ChatMessage.h
 )
 
 target_link_libraries(AgarClient PRIVATE

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Blob.h"
+#include "ChatMessage.h"
 
 #include <cstdint>
 #include <memory>
@@ -47,6 +48,8 @@ public:
     void addOwnedBlob(uint32_t id);
     void removeBlob(uint32_t id);
     void setLeaderboard(std::vector<LeaderboardEntry> entries);
+    void addChatMessage(ChatMessage message);
+    std::vector<ChatMessage> getChatMessages() const;
     std::vector<LeaderboardEntry> getLeaderboard() const;
 
     // Возвращает разделяемый неизменяемый снимок мира. Если мир не менялся
@@ -65,6 +68,7 @@ private:
     std::unordered_map<uint16_t, uint32_t> playerStickers;
     std::vector<uint32_t> ownedIds;
     std::vector<LeaderboardEntry> m_leaderboard;
+    std::vector<ChatMessage> m_chatMessages;
     MapBounds m_mapBounds;
 
     // Версионирование для кэша снапшота.

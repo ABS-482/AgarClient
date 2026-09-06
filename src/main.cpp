@@ -19,6 +19,7 @@
 #include "Graphics/Shaders/SkinShader.h"
 #include "Graphics/Shaders/CircleInstancedShader.h"
 #include "Graphics/InstancedCircleRenderer.h"
+#include "Graphics/UIPanel.h"
 #include "Input/InputManager.h"
 #include "Input/InputState.h"
 #include "Network/NetworkClient.h"
@@ -68,14 +69,14 @@ int main()
 
     Window window("AgarClient", 1280, 720);
 
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-
     if (!window.isValid())
     {
         ix::uninitNetSystem();
         return 1;
     }
+
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
     Shader circleShader(CircleShader::vertex, CircleShader::fragment);
     Shader skinShader(SkinShader::vertex, SkinShader::fragment);
@@ -109,7 +110,7 @@ int main()
     std::vector<float> foodInstanceData;
     Camera camera;
     FrameLimiter frameLimiter(window.refreshRate());
-
+    UIPanel uiPanel;
     World world;
     SkinManager skinManager;
 
@@ -454,6 +455,112 @@ int main()
             static_cast<float>(window.height()),
             1.0f, 1.0f, 1.0f
         );
+
+        auto leaderboard = world.getLeaderboard();
+
+        if (!leaderboard.empty())
+        {
+            constexpr int maxVisible = 10;
+            constexpr float rowHeight = 28.0f;
+            constexpr float padding = 16.0f;
+
+            int visibleCount = std::min(static_cast<int>(leaderboard.size()), maxVisible);
+
+            float panelWidth = 240.0f;
+            float panelHeight = padding * 2.0f + rowHeight * visibleCount;
+
+            float screenW = static_cast<float>(window.width());
+            float screenH = static_cast<float>(window.height());
+
+            float panelCenterX = screenW - panelWidth * 0.5f - 16.0f;
+            float panelCenterY = panelHeight * 0.5f + 16.0f;
+
+            uiPanel.draw(
+                panelCenterX, panelCenterY,
+                panelWidth, panelHeight,
+                12.0f, // corner radius
+                0.08f, 0.08f, 0.12f, 0.75f, // fill — тёмный, полупрозрачный
+                1.0f, 1.0f, 1.0f, 0.15f,    // border — едва заметный белый
+                1.5f,                       // border width
+                screenW, screenH
+            );
+
+            textRenderer.begin();
+
+            float topY = panelCenterY - panelHeight * 0.5f + padding;
+
+            for (int i = 0; i < visibleCount; ++i)
+            {
+                const auto& entry = leaderboard[i];
+
+                std::string line = std::to_string(i + 1) + ". " + entry.name;
+
+                float rowY = topY + rowHeight * i + rowHeight * 0.5f;
+                float rowX = screenW - panelWidth - 16.0f + padding + 60.0f;
+
+                textRenderer.addText(font, line, rowX, rowY, 0.28f);
+            }
+
+            textRenderer.end(
+                font, screenW, screenH,
+                1.0f, 1.0f, 1.0f
+            );
+        }
+
+        auto chatMessages = world.getChatMessages();
+
+        if (!chatMessages.empty())
+        {
+            constexpr int maxVisible = 8;
+            constexpr float rowHeight = 22.0f;
+            constexpr float padding = 12.0f;
+
+            int visibleCount = std::min(static_cast<int>(chatMessages.size()), maxVisible);
+
+            float panelWidth = 420.0f;
+            float panelHeight = padding * 2.0f + rowHeight * visibleCount;
+
+            float screenW = static_cast<float>(window.width());
+            float screenH = static_cast<float>(window.height());
+
+            float panelCenterX = panelWidth * 0.5f + 16.0f;
+            float panelCenterY = screenH - panelHeight * 0.5f - 16.0f;
+
+            uiPanel.draw(
+                panelCenterX, panelCenterY,
+                panelWidth, panelHeight,
+                12.0f,
+                0.08f, 0.08f, 0.12f, 0.65f,
+                1.0f, 1.0f, 1.0f, 0.12f,
+                1.5f,
+                screenW, screenH
+            );
+
+            textRenderer.begin();
+
+            float topY = panelCenterY - panelHeight * 0.5f + padding;
+
+            int startIdx = static_cast<int>(chatMessages.size()) - visibleCount;
+
+            for (int i = 0; i < visibleCount; ++i)
+            {
+                const auto& msg = chatMessages[startIdx + i];
+
+                std::string line = msg.isPlayerEnter
+                    ? msg.name + " enters the game"
+                    : msg.name + ": " + msg.message;
+
+                float rowY = topY + rowHeight * i + rowHeight * 0.5f;
+                float rowX = 16.0f + padding;
+
+                textRenderer.addText(font, line, rowX, rowY, 0.24f);
+            }
+
+            textRenderer.end(
+                font, screenW, screenH,
+                1.0f, 1.0f, 1.0f
+            );
+        }
 
         glBindTexture(GL_TEXTURE_2D, 0);
 

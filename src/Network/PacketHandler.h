@@ -25,6 +25,7 @@ private:
     void handleNamesViaPid(PacketReader& reader);
     void handleMapBounds(PacketReader& reader);
     void handleUsersList(PacketReader& reader);
+    void handleChatMessage(PacketReader& reader, bool isPrivate);
 
     int m_serverProtocol;
     World& m_world;
