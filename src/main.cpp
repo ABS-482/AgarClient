@@ -496,9 +496,9 @@ int main()
                 std::string line = std::to_string(i + 1) + ". " + entry.name;
 
                 float rowY = topY + rowHeight * i + rowHeight * 0.5f;
-                float rowX = screenW - panelWidth - 16.0f + padding + 60.0f;
+                float rowX = screenW - panelWidth - 16.0f + padding;
 
-                textRenderer.addText(font, line, rowX, rowY, 0.28f);
+                textRenderer.addTextLeftAligned(font, line, rowX, rowY, 0.28f);
             }
 
             textRenderer.end(
@@ -553,7 +553,7 @@ int main()
                 float rowY = topY + rowHeight * i + rowHeight * 0.5f;
                 float rowX = 16.0f + padding;
 
-                textRenderer.addText(font, line, rowX, rowY, 0.24f);
+                textRenderer.addTextLeftAligned(font, line, rowX, rowY, 0.24f);
             }
 
             textRenderer.end(

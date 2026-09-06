@@ -1,5 +1,8 @@
 #include "PacketHandler.h"
 
+#include <algorithm>
+#include <array>
+
 #include <iostream>
 
 void PacketHandler::handleMessage(const uint8_t* data, size_t size)
@@ -152,7 +155,26 @@ void PacketHandler::handleChatMessage(PacketReader& reader, bool isPrivate)
     msg.avgScore = reader.readUint8();
 
     msg.name = reader.readUtf16String();
-    msg.message = reader.readUtf16String();
+
+    std::string rawMessage = reader.readUtf16String();
+    std::string displayMessage = rawMessage;
+
+    if (rawMessage.size() >= 4 && rawMessage[rawMessage.size() - 3] == ':')
+    {
+        std::string code = rawMessage.substr(rawMessage.size() - 2, 2);
+
+        static const std::array<std::string, 5> knownLanguageCodes =
+        { "ru", "en", "fr", "nl", "cn" };
+
+        if (std::find(knownLanguageCodes.begin(), knownLanguageCodes.end(), code)
+            != knownLanguageCodes.end())
+        {
+            msg.language = code;
+            displayMessage = rawMessage.substr(0, rawMessage.size() - 4);
+        }
+    }
+
+    msg.message = displayMessage;
 
     msg.isPlayerEnter = (msg.message == "***playerenter***");
 

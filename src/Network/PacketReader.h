@@ -107,15 +107,30 @@ public:
 
         for (;;)
         {
-            uint16_t code = readUint16LE();
+            uint16_t unit = readUint16LE();
 
-            if (code == 0)
+            if (unit == 0)
                 break;
 
-            // Упрощение: считаем, что коды укладываются в ASCII/latin-1.
-            // Если встретите ники с не-ASCII символами — вернёмся
-            // и сделаем нормальную UTF-16 -> UTF-8 конвертацию.
-            result += static_cast<char>(code);
+            uint32_t codepoint = unit;
+
+            if (unit >= 0xD800 && unit <= 0xDBFF)
+            {
+                uint16_t low = readUint16LE();
+
+                if (low >= 0xDC00 && low <= 0xDFFF)
+                {
+                    codepoint = 0x10000 +
+                        ((static_cast<uint32_t>(unit) - 0xD800) << 10) +
+                        (static_cast<uint32_t>(low) - 0xDC00);
+                }
+                else
+                {
+                    codepoint = 0xFFFD;
+                }
+            }
+
+            appendUtf8(result, codepoint);
         }
 
         return result;
@@ -129,6 +144,32 @@ private:
             throw std::out_of_range(
                 "PacketReader: attempt to read past end of buffer"
             );
+        }
+    }
+
+    static void appendUtf8(std::string& out, uint32_t codepoint)
+    {
+        if (codepoint <= 0x7F)
+        {
+            out += static_cast<char>(codepoint);
+        }
+        else if (codepoint <= 0x7FF)
+        {
+            out += static_cast<char>(0xC0 | (codepoint >> 6));
+            out += static_cast<char>(0x80 | (codepoint & 0x3F));
+        }
+        else if (codepoint <= 0xFFFF)
+        {
+            out += static_cast<char>(0xE0 | (codepoint >> 12));
+            out += static_cast<char>(0x80 | ((codepoint >> 6) & 0x3F));
+            out += static_cast<char>(0x80 | (codepoint & 0x3F));
+        }
+        else
+        {
+            out += static_cast<char>(0xF0 | (codepoint >> 18));
+            out += static_cast<char>(0x80 | ((codepoint >> 12) & 0x3F));
+            out += static_cast<char>(0x80 | ((codepoint >> 6) & 0x3F));
+            out += static_cast<char>(0x80 | (codepoint & 0x3F));
         }
     }
 

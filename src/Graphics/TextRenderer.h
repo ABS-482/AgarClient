@@ -34,6 +34,13 @@ public:
         float r, float g, float b
     );
 
+    void addTextLeftAligned(
+        const Font& font,
+        const std::string& text,
+        float screenLeftX, float screenY,
+        float fontScale
+    );
+
 private:
     Shader& m_shader;
 

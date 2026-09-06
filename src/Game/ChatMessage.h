@@ -26,6 +26,7 @@ struct ChatMessage
     std::string name;
     std::string message;
     std::string recipient; // непусто только для приватных (opcode 205)
+    std::string language; // "en", "ru", "fr", "nl", "cn" — пусто, если суффикс не распознан
 
     bool isPrivate = false;
     bool isPlayerEnter = false;

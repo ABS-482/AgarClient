@@ -107,3 +107,34 @@ void TextRenderer::end(
     glBindVertexArray(0);
     glBindTexture(GL_TEXTURE_2D, 0);
 }
+
+void TextRenderer::addTextLeftAligned(
+    const Font& font,
+    const std::string& text,
+    float screenLeftX, float screenY,
+    float fontScale
+)
+{
+    m_scratch.clear();
+
+    font.buildQuads(text, 0.0f, 0.0f, m_scratch);
+
+    if (m_scratch.empty())
+        return;
+
+    float offsetX = screenLeftX; // без вычитания половины ширины — левый край как есть
+    float offsetY = screenY + (70.0f * fontScale) / 3.0f;
+
+    for (size_t i = 0; i < m_scratch.size(); i += 4)
+    {
+        float localX = m_scratch[i];
+        float localY = m_scratch[i + 1];
+        float u = m_scratch[i + 2];
+        float v = m_scratch[i + 3];
+
+        m_batch.push_back(localX * fontScale + offsetX);
+        m_batch.push_back(localY * fontScale + offsetY);
+        m_batch.push_back(u);
+        m_batch.push_back(v);
+    }
+}
