@@ -4,6 +4,7 @@
 #include <SDL3/SDL.h>
 
 #include "Core/FrameStats.h"
+#include "Core/FrameLimiter.h"
 #include "Graphics/Shader.h"
 #include "Graphics/Window.h"
 #include "Graphics/CircleMesh.h"
@@ -107,6 +108,7 @@ int main()
     InstancedCircleRenderer foodRenderer;
     std::vector<float> foodInstanceData;
     Camera camera;
+    FrameLimiter frameLimiter(window.refreshRate());
 
     World world;
     SkinManager skinManager;
@@ -154,6 +156,13 @@ int main()
     while (running)
     {
         stats.beginFrame();
+
+        frameLimiter.beginFrame();
+
+        if (input.cycleFpsLimitPressed)
+        {
+            frameLimiter.cycleMode();
+        }
 
         running = inputManager.poll(input);
 
@@ -458,16 +467,19 @@ int main()
 
         window.swap();
 
+        frameLimiter.endFrame();
+
         stats.endFrame(inputManager.mouseEventsThisFrame());
 
         if (stats.hasNewStats())
         {
             std::ostringstream title;
-            title << "AgarClient | "
-                << std::fixed << std::setprecision(0) << stats.fps()
-                << " FPS | avg " << std::setprecision(3) << stats.averageFrameTimeMs()
-                << " ms | entities " << blobs->size()
-                << " | zoom " << std::setprecision(4) << camera.zoom;
+            title << " | FPS limit: " << frameLimiter.modeName();
+
+            if (frameLimiter.mode() != FrameLimitMode::Unlimited)
+            {
+                title << " (" << frameLimiter.targetFps() << ")";
+            }
 
             window.setTitle(title.str());
         }

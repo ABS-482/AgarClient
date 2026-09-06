@@ -26,6 +26,13 @@ Window::Window(const char* title, int width, int height)
         return;
     }
 
+    SDL_DisplayID displayID = SDL_GetDisplayForWindow(m_window);
+    const SDL_DisplayMode* mode = SDL_GetCurrentDisplayMode(displayID);
+
+    if (mode && mode->refresh_rate > 0.0f)
+    {
+        m_refreshRate = static_cast<int>(mode->refresh_rate);
+    }
     m_glContext = SDL_GL_CreateContext(m_window);
 
     if (!m_glContext)

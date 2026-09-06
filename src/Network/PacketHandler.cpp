@@ -42,6 +42,10 @@ void PacketHandler::handleMessage(const uint8_t* data, size_t size)
             handleWorldUpdate(reader);
             break;
 
+        case 49:
+            handleUsersList(reader);
+            break;
+    
         case 64:
             handleMapBounds(reader);
             break;
@@ -52,7 +56,7 @@ void PacketHandler::handleMessage(const uint8_t* data, size_t size)
             break;
         }
     }
-    catch (const std::out_of_range& e)
+    catch (const std::exception& e)
     {
         std::cerr << "PacketHandler error: " << e.what() << '\n';
     }
@@ -115,6 +119,105 @@ void PacketHandler::handleNamesViaPid(PacketReader& reader)
         if (id > 0)
             m_world.setPlayerName(id, name);
     }
+}
+
+void PacketHandler::handleUsersList(PacketReader& reader)
+{
+    uint32_t count = reader.readUint32LE();
+
+    if (count > reader.remaining() / 8)
+    {
+        throw std::out_of_range("handleUsersList: count слишком большой для оставшихся данных");
+    }
+
+    std::vector<LeaderboardEntry> users;
+    users.reserve(count);
+
+    for (uint32_t i = 0; i < count; ++i)
+    {
+        LeaderboardEntry entry;
+        entry.id = reader.readUint32LE();
+        entry.name = reader.readUtf16String();
+        users.push_back(std::move(entry));
+    }
+
+    // Легаси-формат: доп. поля встроены прямо в имя, через ":::".
+    for (auto& user : users)
+    {
+        if (user.name.find(":::") == std::string::npos)
+            continue;
+
+        std::vector<std::string> parts;
+        size_t start = 0;
+
+        for (;;)
+        {
+            size_t pos = user.name.find(":::", start);
+            parts.push_back(user.name.substr(start, pos - start));
+
+            if (pos == std::string::npos)
+                break;
+
+            start = pos + 3;
+        }
+
+        if (parts.size() == 4 || parts.size() == 5)
+        {
+            user.name = parts[0];
+
+            try { user.userLevel = static_cast<uint16_t>(std::stoi(parts[1])); }
+            catch (...) {}
+
+            if (!parts[2].empty())
+                user.userType = static_cast<uint8_t>(parts[2][0]);
+
+            try { user.urlId = static_cast<uint32_t>(std::stoul(parts[3])); }
+            catch (...) {}
+
+            if (parts.size() == 5)
+            {
+                try
+                {
+                    user.userLevelSeason = static_cast<uint16_t>(std::stoi(parts[4]));
+                    user.hasSeason = true;
+                }
+                catch (...) {}
+            }
+        }
+    }
+
+    // Опциональный бинарный блок — если есть, ПЕРЕЗАПИСЫВАЕТ поля выше.
+    if (reader.hasMore())
+    {
+        uint32_t entryCount = reader.readUint32LE();
+        size_t remaining = reader.remaining();
+
+        if (entryCount > 0 && remaining / entryCount < 7)
+        {
+            entryCount = 0; // не похоже на реальный блок — пропускаем, не читаем
+        }
+
+        size_t bytesPerEntry = (entryCount > 0) ? (remaining / entryCount) : 0;
+        int version = 0;
+
+        if (bytesPerEntry == 9) version = 2;
+        else if (bytesPerEntry == 7) version = 1;
+
+        for (uint32_t i = 0; i < entryCount && i < users.size() && version != 0; ++i)
+        {
+            users[i].userLevel = reader.readUint16LE();
+            users[i].userType = reader.readUint8();
+            users[i].urlId = reader.readUint32LE();
+
+            if (version == 2)
+            {
+                users[i].userLevelSeason = reader.readUint16LE();
+                users[i].hasSeason = true;
+            }
+        }
+    }
+
+    m_world.setLeaderboard(std::move(users));
 }
 
 void PacketHandler::handleWorldUpdate(PacketReader& reader)

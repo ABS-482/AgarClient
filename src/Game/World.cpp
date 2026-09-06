@@ -213,3 +213,15 @@ WorldSnapshot World::snapshot() const
 
     return m_cachedSnapshot;
 }
+
+void World::setLeaderboard(std::vector<LeaderboardEntry> entries)
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+    m_leaderboard = std::move(entries);
+}
+
+std::vector<LeaderboardEntry> World::getLeaderboard() const
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+    return m_leaderboard;
+}

@@ -7,6 +7,7 @@ bool InputManager::poll(InputState& state)
     m_mouseEventsThisFrame = 0;
     state.leftButtonJustPressed = false;
     state.mouseWheel = 0.0f;
+    state.cycleFpsLimitPressed = false;
 
     SDL_Event event;
     while (SDL_PollEvent(&event))
@@ -41,6 +42,13 @@ bool InputManager::poll(InputState& state)
 
         case SDL_EVENT_MOUSE_WHEEL:
             state.mouseWheel += event.wheel.y;
+            break;
+
+        case SDL_EVENT_KEY_DOWN:
+            if (event.key.scancode == SDL_SCANCODE_F1 && !event.key.repeat)
+            {
+                state.cycleFpsLimitPressed = true;
+            }
             break;
 
         default:

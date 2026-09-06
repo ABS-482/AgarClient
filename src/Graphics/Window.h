@@ -17,6 +17,7 @@ public:
     SDL_Window* handle() const { return m_window; }
     int width() const { return m_width; }
     int height() const { return m_height; }
+    int refreshRate() const { return m_refreshRate; }
 
     void swap();
     void setTitle(const std::string& title);
@@ -26,4 +27,5 @@ private:
     SDL_GLContext m_glContext = nullptr;
     int m_width = 0;
     int m_height = 0;
+    int m_refreshRate = 60;
 };

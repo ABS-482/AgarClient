@@ -24,6 +24,7 @@ private:
     void handleRemovePidName(PacketReader& reader);
     void handleNamesViaPid(PacketReader& reader);
     void handleMapBounds(PacketReader& reader);
+    void handleUsersList(PacketReader& reader);
 
     int m_serverProtocol;
     World& m_world;

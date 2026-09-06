@@ -10,6 +10,7 @@ struct InputState
 
     bool leftButton = false;
     bool rightButton = false;
+    bool cycleFpsLimitPressed = false;
 
     bool leftButtonJustPressed = false;
 

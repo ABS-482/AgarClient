@@ -33,6 +33,7 @@ add_executable(AgarClient
     src/Graphics/InstancedCircleRenderer.cpp
     src/Input/InputManager.cpp
     src/Core/FrameStats.cpp
+    src/Core/FrameLimiter.cpp
     src/Network/NetworkClient.cpp
     src/Network/PacketHandler.cpp
     src/Game/World.cpp

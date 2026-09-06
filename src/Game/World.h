@@ -7,6 +7,7 @@
 #include <mutex>
 #include <string>
 #include <unordered_map>
+#include "Leaderboard.h"
 #include <vector>
 
 using WorldSnapshot = std::shared_ptr<const std::unordered_map<uint32_t, Blob>>;
@@ -45,6 +46,8 @@ public:
     void removePlayerMeta(uint16_t playerID);
     void addOwnedBlob(uint32_t id);
     void removeBlob(uint32_t id);
+    void setLeaderboard(std::vector<LeaderboardEntry> entries);
+    std::vector<LeaderboardEntry> getLeaderboard() const;
 
     // Возвращает разделяемый неизменяемый снимок мира. Если мир не менялся
     // с прошлого вызова — копирования НЕ происходит, отдаётся тот же shared_ptr.
@@ -61,6 +64,7 @@ private:
     std::unordered_map<uint16_t, uint8_t> playerColorIndexes;
     std::unordered_map<uint16_t, uint32_t> playerStickers;
     std::vector<uint32_t> ownedIds;
+    std::vector<LeaderboardEntry> m_leaderboard;
     MapBounds m_mapBounds;
 
     // Версионирование для кэша снапшота.
