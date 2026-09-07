@@ -43,6 +43,75 @@ namespace
 
         return dst;
     }
+
+    uint32_t decodeUtf8(const std::string& text, size_t& index)
+    {
+        const unsigned char c0 = static_cast<unsigned char>(text[index]);
+
+        if (c0 < 0x80)
+        {
+            ++index;
+            return c0;
+        }
+
+        if ((c0 & 0xE0) == 0xC0 && index + 1 < text.size())
+        {
+            const unsigned char c1 =
+                static_cast<unsigned char>(text[index + 1]);
+
+            if ((c1 & 0xC0) == 0x80)
+            {
+                index += 2;
+                return
+                    ((static_cast<uint32_t>(c0) & 0x1F) << 6) |
+                    (static_cast<uint32_t>(c1) & 0x3F);
+            }
+        }
+
+        if ((c0 & 0xF0) == 0xE0 && index + 2 < text.size())
+        {
+            const unsigned char c1 =
+                static_cast<unsigned char>(text[index + 1]);
+            const unsigned char c2 =
+                static_cast<unsigned char>(text[index + 2]);
+
+            if ((c1 & 0xC0) == 0x80 &&
+                (c2 & 0xC0) == 0x80)
+            {
+                index += 3;
+                return
+                    ((static_cast<uint32_t>(c0) & 0x0F) << 12) |
+                    ((static_cast<uint32_t>(c1) & 0x3F) << 6) |
+                    (static_cast<uint32_t>(c2) & 0x3F);
+            }
+        }
+
+        if ((c0 & 0xF8) == 0xF0 && index + 3 < text.size())
+        {
+            const unsigned char c1 =
+                static_cast<unsigned char>(text[index + 1]);
+            const unsigned char c2 =
+                static_cast<unsigned char>(text[index + 2]);
+            const unsigned char c3 =
+                static_cast<unsigned char>(text[index + 3]);
+
+            if ((c1 & 0xC0) == 0x80 &&
+                (c2 & 0xC0) == 0x80 &&
+                (c3 & 0xC0) == 0x80)
+            {
+                index += 4;
+                return
+                    ((static_cast<uint32_t>(c0) & 0x07) << 18) |
+                    ((static_cast<uint32_t>(c1) & 0x3F) << 12) |
+                    ((static_cast<uint32_t>(c2) & 0x3F) << 6) |
+                    (static_cast<uint32_t>(c3) & 0x3F);
+            }
+        }
+
+        // Некорректный UTF-8 байт.
+        ++index;
+        return 0;
+    }
 }
 
 Font::Font(const std::string& ttfPath, float pixelHeight, float borderPixels)
@@ -86,9 +155,25 @@ Font::Font(const std::string& ttfPath, float pixelHeight, float borderPixels)
     int penY = m_padding;
     int rowHeight = 0;
 
+    std::vector<uint32_t> codepoints;
+
     for (int c = m_firstChar; c < m_firstChar + m_numChars; ++c)
+        codepoints.push_back(static_cast<uint32_t>(c));
+
+    // Кириллица, как в Java-версии.
+    for (uint32_t c = 0x0410; c <= 0x042F; ++c) // А-Я
+        codepoints.push_back(c);
+
+    for (uint32_t c = 0x0430; c <= 0x044F; ++c) // а-я
+        codepoints.push_back(c);
+
+    codepoints.push_back(0x0401); // Ё
+    codepoints.push_back(0x0451); // ё
+    codepoints.push_back(0x203A); // ›
+
+    for (uint32_t c : codepoints)
     {
-        int glyphIndex = stbtt_FindGlyphIndex(&fontInfo, c);
+        int glyphIndex = stbtt_FindGlyphIndex(&fontInfo, static_cast<int>(c));
 
         int advanceWidth = 0, leftBearing = 0;
         stbtt_GetGlyphHMetrics(&fontInfo, glyphIndex, &advanceWidth, &leftBearing);
@@ -209,9 +294,13 @@ float Font::buildQuads(
 {
     float startX = x;
 
-    for (char c : text)
+    size_t index = 0;
+
+    while (index < text.size())
     {
-        auto it = m_glyphs.find(static_cast<int>(c));
+        uint32_t codepoint = decodeUtf8(text, index);
+
+        auto it = m_glyphs.find(static_cast<int>(codepoint));
 
         if (it == m_glyphs.end())
             continue;
