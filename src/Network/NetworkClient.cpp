@@ -4,6 +4,66 @@
 #include <cstring>
 #include <random>
 
+namespace
+{
+    // UTF-8 → UTF-16LE, с поддержкой суррогатных пар — честный аналог
+    // того, что JS-строка уже даёт "бесплатно" через charCodeAt.
+    void appendUtf16LE(std::vector<uint8_t>& buf, const std::string& utf8Text)
+    {
+        size_t i = 0;
+
+        while (i < utf8Text.size())
+        {
+            unsigned char c0 = static_cast<unsigned char>(utf8Text[i]);
+            uint32_t codepoint = 0;
+            size_t extra = 0;
+
+            if (c0 < 0x80) { codepoint = c0; extra = 0; }
+            else if ((c0 & 0xE0) == 0xC0) { codepoint = c0 & 0x1F; extra = 1; }
+            else if ((c0 & 0xF0) == 0xE0) { codepoint = c0 & 0x0F; extra = 2; }
+            else if ((c0 & 0xF8) == 0xF0) { codepoint = c0 & 0x07; extra = 3; }
+            else { ++i; continue; }
+
+            if (i + extra >= utf8Text.size())
+                break;
+
+            bool valid = true;
+
+            for (size_t k = 1; k <= extra; ++k)
+            {
+                unsigned char cc = static_cast<unsigned char>(utf8Text[i + k]);
+
+                if ((cc & 0xC0) != 0x80) { valid = false; break; }
+
+                codepoint = (codepoint << 6) | (cc & 0x3F);
+            }
+
+            i += extra + 1;
+
+            if (!valid)
+                continue;
+
+            if (codepoint <= 0xFFFF)
+            {
+                uint16_t unit = static_cast<uint16_t>(codepoint);
+                buf.push_back(static_cast<uint8_t>(unit & 0xFF));
+                buf.push_back(static_cast<uint8_t>((unit >> 8) & 0xFF));
+            }
+            else
+            {
+                uint32_t v = codepoint - 0x10000;
+                uint16_t high = static_cast<uint16_t>(0xD800 + (v >> 10));
+                uint16_t low = static_cast<uint16_t>(0xDC00 + (v & 0x3FF));
+
+                buf.push_back(static_cast<uint8_t>(high & 0xFF));
+                buf.push_back(static_cast<uint8_t>((high >> 8) & 0xFF));
+                buf.push_back(static_cast<uint8_t>(low & 0xFF));
+                buf.push_back(static_cast<uint8_t>((low >> 8) & 0xFF));
+            }
+        }
+    }
+}
+
 NetworkClient::NetworkClient(PacketHandler& handler)
     : m_handler(handler)
 {
@@ -80,6 +140,77 @@ void NetworkClient::sendRaw(const uint8_t* data, size_t size)
     );
 }
 
+void NetworkClient::sendNick()
+{
+    if (m_nickname.empty())
+        return;
+
+    std::vector<uint8_t> buf;
+    buf.push_back(0);
+
+    appendUtf16LE(buf, m_nickname);
+
+    sendRaw(buf.data(), buf.size());
+}
+
+void NetworkClient::sendDonate()
+{
+    if (m_donatePass.empty())
+        return; // как и в JS — не отправляем, если mp == null/пусто
+
+    std::vector<uint8_t> buf;
+    buf.push_back(78);
+
+    buf.push_back(static_cast<uint8_t>(m_donateId & 0xFF));
+    buf.push_back(static_cast<uint8_t>((m_donateId >> 8) & 0xFF));
+    buf.push_back(static_cast<uint8_t>((m_donateId >> 16) & 0xFF));
+    buf.push_back(static_cast<uint8_t>((m_donateId >> 24) & 0xFF));
+
+    appendUtf16LE(buf, m_donatePass);
+
+    sendRaw(buf.data(), buf.size());
+}
+
+void NetworkClient::sendPlayerColor()
+{
+    uint8_t buf[2] = { 79, m_playerColor };
+    sendRaw(buf, sizeof(buf));
+}
+
+void NetworkClient::requestSpawn()
+{
+    sendNick();
+    sendPlayerPassword(); // уже реализовано ранее, переиспользуем — эквивалент doSendPass()
+    sendDonate();
+    sendPlayerColor();
+    sendChat("***playerenter***");
+    sendChat("***playerenter***");
+}
+
+void NetworkClient::sendChat(const std::string& text)
+{
+    if (text.empty() || text.size() >= 200)
+        return;
+
+    auto now = std::chrono::steady_clock::now();
+    auto sinceLastChat = std::chrono::duration_cast<std::chrono::milliseconds>(
+        now - m_lastChatTime
+    ).count();
+
+    if (sinceLastChat < 5000)
+        return;
+
+    m_lastChatTime = now;
+
+    std::vector<uint8_t> buf;
+    buf.push_back(99);
+    buf.push_back(0);
+
+    appendUtf16LE(buf, text);
+
+    sendRaw(buf.data(), buf.size());
+}
+
 void NetworkClient::sendHandshake()
 {
     constexpr uint32_t snurmd = 102;
@@ -143,7 +274,7 @@ void NetworkClient::sendPlayerPassword()
     sendRaw(buf.data(), buf.size());
 }
 
-void NetworkClient::sendSpectatePosition(double worldX, double worldY)
+void NetworkClient::sendAimPosition(double worldX, double worldY)
 {
     uint8_t buf[21];
     buf[0] = 16;

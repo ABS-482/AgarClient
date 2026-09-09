@@ -210,6 +210,12 @@ std::vector<ChatMessage> World::getChatMessages() const
     return m_chatMessages;
 }
 
+std::vector<uint32_t> World::getOwnedIds() const
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+    return ownedIds;
+}
+
 void World::removePlayerMeta(uint16_t playerID)
 {
     std::lock_guard<std::mutex> lock(m_mutex);

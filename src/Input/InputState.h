@@ -12,6 +12,8 @@ struct InputState
     bool rightButton = false;
     bool cycleFpsLimitPressed = false;
 
+    bool spawnRequestPressed = false;
+
     bool leftButtonJustPressed = false;
 
     float mouseWheel = 0.0f;

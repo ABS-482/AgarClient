@@ -5,6 +5,7 @@
 bool InputManager::poll(InputState& state)
 {
     m_mouseEventsThisFrame = 0;
+    state.spawnRequestPressed = false;
     state.leftButtonJustPressed = false;
     state.mouseWheel = 0.0f;
     state.cycleFpsLimitPressed = false;
@@ -48,6 +49,10 @@ bool InputManager::poll(InputState& state)
             if (event.key.scancode == SDL_SCANCODE_F1 && !event.key.repeat)
             {
                 state.cycleFpsLimitPressed = true;
+            }
+            else if (event.key.scancode == SDL_SCANCODE_F2 && !event.key.repeat)
+            {
+                state.spawnRequestPressed = true;
             }
             break;
 

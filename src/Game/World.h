@@ -59,6 +59,8 @@ public:
     void setMapBounds(double minX, double minY, double maxX, double maxY);
     MapBounds getMapBounds() const;
 
+    std::vector<uint32_t> getOwnedIds() const;
+
 private:
     mutable std::mutex m_mutex;
     std::unordered_map<uint32_t, Blob> m_blobs;

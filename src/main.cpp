@@ -143,8 +143,10 @@ int main()
     PacketHandler packetHandler(9, world);
 
     NetworkClient network(packetHandler);
-    network.connect("wss://megasplit5k1.petridish.pw");
+    network.connect("wss://megasplit5k5.petridish.pw");
     network.setPlayerPassword("");
+    network.setNickname("TestPlayer");
+    network.setPlayerColor(5); // любой индекс из вашей таблицы PlayerColors, подберите на вкус
 
     InputManager inputManager;
     InputState input;
@@ -153,6 +155,11 @@ int main()
     bool running = true;
 
     bool mapCentered = false;
+
+    float aimXOld = 0.0f;
+    float aimYOld = 0.0f;
+    bool hasAimOld = false;
+    std::chrono::steady_clock::time_point lastAimSendTime{};
 
     while (running)
     {
@@ -167,7 +174,89 @@ int main()
 
         running = inputManager.poll(input);
 
+        if (input.spawnRequestPressed)
+        {
+            network.requestSpawn();
+        }
+
         auto blobs = world.snapshot();
+
+        auto ownedIds = world.getOwnedIds();
+
+        if (!ownedIds.empty())
+        {
+            float sumX = 0.0f;
+            float sumY = 0.0f;
+            int count = 0;
+
+            for (uint32_t id : ownedIds)
+            {
+                auto it = blobs->find(id);
+
+                if (it != blobs->end())
+                {
+                    auto rsIt = renderStates.find(id);
+
+                    if (rsIt != renderStates.end())
+                    {
+                        sumX += rsIt->second.x;
+                        sumY += rsIt->second.y;
+                    }
+                    else
+                    {
+                        sumX += it->second.targetX;
+                        sumY += it->second.targetY;
+                    }
+
+                    ++count;
+                }
+            }
+
+            if (count > 0)
+            {
+                float avgX = sumX / count;
+                float avgY = sumY / count;
+
+                camera.setManualTarget(avgX, avgY);
+            }
+        }
+
+        if (!ownedIds.empty())
+        {
+            float normalizeX = input.mouseX - static_cast<float>(window.width()) * 0.5f;
+            float normalizeY = input.mouseY - static_cast<float>(window.height()) * 0.5f;
+
+            if (normalizeX * normalizeX + normalizeY * normalizeY >= 64.0f)
+            {
+                auto nowAim = std::chrono::steady_clock::now();
+
+                if (nowAim - lastAimSendTime >= std::chrono::milliseconds(16))
+                {
+                    lastAimSendTime = nowAim;
+
+                    float aimX, aimY;
+                    camera.screenToWorld(
+                        input.mouseX, input.mouseY,
+                        static_cast<float>(window.width()),
+                        static_cast<float>(window.height()),
+                        aimX, aimY
+                    );
+
+                    bool changedEnough = !hasAimOld ||
+                        std::abs(aimXOld - aimX) >= 0.01f ||
+                        std::abs(aimYOld - aimY) >= 0.01f;
+
+                    if (changedEnough)
+                    {
+                        aimXOld = aimX;
+                        aimYOld = aimY;
+                        hasAimOld = true;
+
+                        network.sendAimPosition(std::floor(aimX), std::floor(aimY));
+                    }
+                }
+            }
+        }
 
         skinManager.processCompleted();
 
@@ -213,7 +302,7 @@ int main()
             );
 
             camera.setManualTarget(worldX, worldY);
-            network.sendSpectatePosition(worldX, worldY);
+            network.sendAimPosition(worldX, worldY);
         }
 
         camera.update(static_cast<float>(stats.deltaTime()));
