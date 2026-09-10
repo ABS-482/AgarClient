@@ -13,17 +13,18 @@ public:
 
     float zoom = 0.27f;
     float targetZoom = 0.27f;
-
     float zoomScale = 1.0f;
+    float sizeZoomFactor = 1.0f;
 
     float targetX = 0.0f;
     float targetY = 0.0f;
 
-    static constexpr float minZoomScale = 0.2f;
-    static constexpr float maxZoomScale = 1.5f;
-    static constexpr float baseZoom = 0.27f;
-    static constexpr float minZoom = 0.05f;
-    static constexpr float maxZoom = 0.4f;
+    float minZoomScale = 0.2f;
+    float maxZoomScale = 1.5f;
+    float baseZoom = 0.27f;
+    float minZoom = 0.05f;
+    float maxZoom = 0.4f;
+
 
     bool hasBounds = false;
     float boundsMinX = 0.0f;
@@ -41,6 +42,12 @@ public:
     // инициализации, когда доезжать до значения кадр за кадром не нужно.
     void setZoomImmediate(float desiredZoom);
 
+    void snapTowardsTarget(float deltaTime, float halfLifeSeconds);
+
+    void updateZoomOnly(float deltaTime);
+
+    void setSizeZoomFactor(float factor) { sizeZoomFactor = factor; }
+
     void screenToWorld(
         float screenX, float screenY,
         float screenWidth, float screenHeight,
@@ -52,4 +59,9 @@ public:
         float screenWidth, float screenHeight,
         float& outScreenX, float& outScreenY
     ) const;
+
+    void setZoomLimits(
+        float minScale, float maxScale,
+        float minAbsolute, float maxAbsolute
+    );
 };

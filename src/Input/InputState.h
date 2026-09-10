@@ -16,5 +16,10 @@ struct InputState
 
     bool leftButtonJustPressed = false;
 
+    bool splitRequested = false;
+    bool ejectMassRequested = false;
+
+    bool ejectMassKeyHeld = false; // true, пока клавиша физически зажата
+
     float mouseWheel = 0.0f;
 };

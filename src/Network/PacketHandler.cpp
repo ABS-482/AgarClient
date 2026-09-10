@@ -5,6 +5,8 @@
 
 #include <iostream>
 
+#include "../Network/NetworkClient.h"
+
 void PacketHandler::handleMessage(const uint8_t* data, size_t size)
 {
     if (size == 0)
@@ -53,6 +55,10 @@ void PacketHandler::handleMessage(const uint8_t* data, size_t size)
             handleMapBounds(reader);
             break;
 
+        case 97:
+            handleDelayedNickRequest(reader);
+            break;
+
         case 199:
             handleChatMessage(reader, false);
             break;
@@ -84,6 +90,17 @@ void PacketHandler::handleColorsViaPid(PacketReader& reader)
 
         if (id > 0)
             m_world.setPlayerColorIndex(id, color);
+    }
+}
+
+void PacketHandler::handleDelayedNickRequest(PacketReader& reader)
+{
+    uint8_t request = reader.readUint8();
+    (void)request; // пока не используется, но байт нужно потребить из потока
+
+    if (m_networkClient)
+    {
+        m_networkClient->requestDelayedNickResend();
     }
 }
 

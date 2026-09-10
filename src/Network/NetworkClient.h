@@ -6,6 +6,8 @@
 
 #include <string>
 
+#include <mutex>
+
 class NetworkClient
 {
 public:
@@ -18,6 +20,11 @@ public:
     void setPlayerPassword(const std::string& password) { m_playerPassword = password; }
     void sendAimPosition(double worldX, double worldY);
     void setNickname(const std::string& nickname) { m_nickname = nickname; }
+    void requestSplit();
+    void requestEjectMass();
+    void requestSpawnFromSpectate();
+    void requestDelayedNickResend();
+    void update(); // вызывать раз в кадр из главного цикла
 
     void setDonateCredentials(uint32_t donateId, const std::string& donatePass)
     {
@@ -46,6 +53,9 @@ private:
     void sendPacket(uint8_t opcode);
     void sendPlayerPassword();
     std::chrono::steady_clock::time_point m_lastChatTime{};
+    std::mutex m_pendingMutex;
+    bool m_pendingNickResend = false;
+    std::chrono::steady_clock::time_point m_nickResendTime{};
 
     std::string m_playerPassword;
 

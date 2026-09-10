@@ -5,6 +5,8 @@
 
 #include <cstdint>
 
+class NetworkClient;
+
 class PacketHandler
 {
 public:
@@ -16,6 +18,10 @@ public:
 
     // Аналог вашего parse(reader) из JS.
     void handleMessage(const uint8_t* data, size_t size);
+    void setNetworkClient(NetworkClient& client)
+    {
+        m_networkClient = &client;
+    }
 
 private:
     void handleWorldUpdate(PacketReader& reader);
@@ -26,7 +32,9 @@ private:
     void handleMapBounds(PacketReader& reader);
     void handleUsersList(PacketReader& reader);
     void handleChatMessage(PacketReader& reader, bool isPrivate);
+    void handleDelayedNickRequest(PacketReader& reader);
 
     int m_serverProtocol;
     World& m_world;
+    NetworkClient* m_networkClient = nullptr;
 };

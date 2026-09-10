@@ -9,6 +9,8 @@ bool InputManager::poll(InputState& state)
     state.leftButtonJustPressed = false;
     state.mouseWheel = 0.0f;
     state.cycleFpsLimitPressed = false;
+    state.splitRequested = false;
+    state.ejectMassRequested = false;
 
     SDL_Event event;
     while (SDL_PollEvent(&event))
@@ -53,6 +55,25 @@ bool InputManager::poll(InputState& state)
             else if (event.key.scancode == SDL_SCANCODE_F2 && !event.key.repeat)
             {
                 state.spawnRequestPressed = true;
+            }
+            else if (event.key.scancode == SDL_SCANCODE_SPACE && !event.key.repeat)
+            {
+                state.splitRequested = true;
+            }
+            else if (event.key.scancode == SDL_SCANCODE_W && !event.key.repeat)
+            {
+                state.ejectMassRequested = true;
+            }
+            else if (event.key.scancode == SDL_SCANCODE_Q)
+            {
+                state.ejectMassKeyHeld = true;
+            }
+            break;
+
+        case SDL_EVENT_KEY_UP:
+            if (event.key.scancode == SDL_SCANCODE_Q)
+            {
+                state.ejectMassKeyHeld = false;
             }
             break;
 

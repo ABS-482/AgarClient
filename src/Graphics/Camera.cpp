@@ -80,3 +80,54 @@ void Camera::worldToScreen(
     outScreenX = (worldX - x) * zoom + screenWidth * 0.5f;
     outScreenY = (worldY - y) * zoom + screenHeight * 0.5f;
 }
+
+void Camera::snapTowardsTarget(float deltaTime, float halfLifeSeconds)
+{
+    // halfLifeSeconds — время, за которое расстояние до цели
+    // сокращается вдвое, НЕЗАВИСИМО от FPS.
+    float smoothing = 1.0f - std::pow(0.5f, deltaTime / halfLifeSeconds);
+
+    x = x + (targetX - x) * smoothing;
+    y = y + (targetY - y) * smoothing;
+
+    if (hasBounds)
+    {
+        x = std::clamp(x, boundsMinX, boundsMaxX);
+        y = std::clamp(y, boundsMinY, boundsMaxY);
+    }
+}
+
+void Camera::updateZoomOnly(float deltaTime)
+{
+    float effectiveDivisor = baseZoom * std::max(sizeZoomFactor, 0.0001f);
+
+    float dynamicMinScale = std::max(minZoomScale, minZoom / effectiveDivisor);
+    float dynamicMaxScale = std::min(maxZoomScale, maxZoom / effectiveDivisor);
+
+    if (dynamicMinScale > dynamicMaxScale)
+    {
+        std::swap(dynamicMinScale, dynamicMaxScale);
+    }
+
+    zoomScale = std::clamp(zoomScale, dynamicMinScale, dynamicMaxScale);
+
+    targetZoom = zoomScale * baseZoom * sizeZoomFactor;
+
+    float zoomSmoothing = std::clamp(deltaTime * 8.0f, 0.0f, 1.0f);
+    zoom += (targetZoom - zoom) * zoomSmoothing;
+
+    zoom = std::clamp(zoom, minZoom, maxZoom);
+}
+
+void Camera::setZoomLimits(
+    float minScale, float maxScale,
+    float minAbsolute, float maxAbsolute
+)
+{
+    minZoomScale = minScale;
+    maxZoomScale = maxScale;
+    minZoom = minAbsolute;
+    maxZoom = maxAbsolute;
+
+    zoomScale = std::clamp(zoomScale, minZoomScale, maxZoomScale);
+}

@@ -143,10 +143,11 @@ int main()
     PacketHandler packetHandler(9, world);
 
     NetworkClient network(packetHandler);
-    network.connect("wss://megasplit5k5.petridish.pw");
+    packetHandler.setNetworkClient(network);
+    network.connect("wss://megasplit5k6.petridish.pw");
     network.setPlayerPassword("");
-    network.setNickname("TestPlayer");
-    network.setPlayerColor(5); // любой индекс из вашей таблицы PlayerColors, подберите на вкус
+    network.setNickname("Android Player");
+    network.setPlayerColor(6); // любой индекс из вашей таблицы PlayerColors, подберите на вкус
 
     InputManager inputManager;
     InputState input;
@@ -160,6 +161,7 @@ int main()
     float aimYOld = 0.0f;
     bool hasAimOld = false;
     std::chrono::steady_clock::time_point lastAimSendTime{};
+    std::chrono::steady_clock::time_point lastMacroShotTime{};
 
     while (running)
     {
@@ -178,16 +180,77 @@ int main()
         {
             network.requestSpawn();
         }
-
+        
         auto blobs = world.snapshot();
 
         auto ownedIds = world.getOwnedIds();
+
+        auto trySendFreshAim = [&](bool bypassRateLimit) -> bool
+            {
+                float aimX, aimY;
+                camera.screenToWorld(
+                    input.mouseX, input.mouseY,
+                    static_cast<float>(window.width()),
+                    static_cast<float>(window.height()),
+                    aimX, aimY
+                );
+
+                bool changedEnough = !hasAimOld ||
+                    std::abs(aimXOld - aimX) >= 0.01f ||
+                    std::abs(aimYOld - aimY) >= 0.01f;
+
+                if (!changedEnough)
+                    return false;
+
+                auto now = std::chrono::steady_clock::now();
+
+                if (!bypassRateLimit && (now - lastAimSendTime < std::chrono::milliseconds(4)))
+                    return false;
+
+                lastAimSendTime = now;
+                aimXOld = aimX;
+                aimYOld = aimY;
+                hasAimOld = true;
+
+                network.sendAimPosition(std::floor(aimX), std::floor(aimY));
+                return true;
+            };
+
+        if ((input.splitRequested || input.ejectMassRequested) && !ownedIds.empty())
+        {
+            trySendFreshAim(true);
+
+            if (input.splitRequested)
+            {
+                network.requestSplit();
+            }
+
+            if (input.ejectMassRequested)
+            {
+                network.requestEjectMass();
+            }
+        }
+
+        if (input.ejectMassKeyHeld && !ownedIds.empty())
+        {
+            auto nowMacro = std::chrono::steady_clock::now();
+
+            if (nowMacro - lastMacroShotTime >= std::chrono::milliseconds(40))
+            {
+                lastMacroShotTime = nowMacro;
+
+                trySendFreshAim(true);
+                network.requestEjectMass();
+            }
+        }
 
         if (!ownedIds.empty())
         {
             float sumX = 0.0f;
             float sumY = 0.0f;
             int count = 0;
+
+            float totalSize = 0.0f;
 
             for (uint32_t id : ownedIds)
             {
@@ -201,15 +264,23 @@ int main()
                     {
                         sumX += rsIt->second.x;
                         sumY += rsIt->second.y;
+                        totalSize += rsIt->second.size;
                     }
                     else
                     {
                         sumX += it->second.targetX;
                         sumY += it->second.targetY;
+                        totalSize += it->second.targetSize;
                     }
 
                     ++count;
                 }
+            }
+
+            if (totalSize > 0.0f)
+            {
+                float sizeFactor = std::pow(std::min(64.0f / totalSize, 1.0f), 0.4f);
+                camera.setSizeZoomFactor(sizeFactor);
             }
 
             if (count > 0)
@@ -223,43 +294,12 @@ int main()
 
         if (!ownedIds.empty())
         {
-            float normalizeX = input.mouseX - static_cast<float>(window.width()) * 0.5f;
-            float normalizeY = input.mouseY - static_cast<float>(window.height()) * 0.5f;
-
-            if (normalizeX * normalizeX + normalizeY * normalizeY >= 64.0f)
-            {
-                auto nowAim = std::chrono::steady_clock::now();
-
-                if (nowAim - lastAimSendTime >= std::chrono::milliseconds(16))
-                {
-                    lastAimSendTime = nowAim;
-
-                    float aimX, aimY;
-                    camera.screenToWorld(
-                        input.mouseX, input.mouseY,
-                        static_cast<float>(window.width()),
-                        static_cast<float>(window.height()),
-                        aimX, aimY
-                    );
-
-                    bool changedEnough = !hasAimOld ||
-                        std::abs(aimXOld - aimX) >= 0.01f ||
-                        std::abs(aimYOld - aimY) >= 0.01f;
-
-                    if (changedEnough)
-                    {
-                        aimXOld = aimX;
-                        aimYOld = aimY;
-                        hasAimOld = true;
-
-                        network.sendAimPosition(std::floor(aimX), std::floor(aimY));
-                    }
-                }
-            }
+            trySendFreshAim(false);
         }
 
         skinManager.processCompleted();
 
+        network.update();
         if (!mapCentered)
         {
             World::MapBounds bounds = world.getMapBounds();
@@ -305,7 +345,19 @@ int main()
             network.sendAimPosition(worldX, worldY);
         }
 
-        camera.update(static_cast<float>(stats.deltaTime()));
+        if (!ownedIds.empty())
+        {
+            camera.setZoomLimits(0.2f, 6.0f, 0.05f, 2.0f);
+
+            camera.snapTowardsTarget(static_cast<float>(stats.deltaTime()), 0.01667f);
+            camera.updateZoomOnly(static_cast<float>(stats.deltaTime()));
+        }
+        else
+        {
+            camera.setZoomLimits(0.2f, 1.5f, 0.05f, 0.4f);
+
+            camera.update(static_cast<float>(stats.deltaTime()));
+        }
 
         glClearColor(0.06f, 0.06f, 0.09f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT);

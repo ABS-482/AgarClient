@@ -86,6 +86,7 @@ NetworkClient::NetworkClient(PacketHandler& handler)
                 sendHandshake();
                 requestSpectate();
                 sendPlayerPassword();
+                sendPlayerColor();
                 break;
 
             case ix::WebSocketMessageType::Close:
@@ -179,12 +180,7 @@ void NetworkClient::sendPlayerColor()
 
 void NetworkClient::requestSpawn()
 {
-    sendNick();
-    sendPlayerPassword(); // уже реализовано ранее, переиспользуем — эквивалент doSendPass()
-    sendDonate();
-    sendPlayerColor();
-    sendChat("***playerenter***");
-    sendChat("***playerenter***");
+    requestSpawnFromSpectate();
 }
 
 void NetworkClient::sendChat(const std::string& text)
@@ -286,4 +282,37 @@ void NetworkClient::sendAimPosition(double worldX, double worldY)
     std::memcpy(buf + 17, &zero, sizeof(uint32_t));
 
     sendRaw(buf, sizeof(buf));
+}
+
+void NetworkClient::requestSplit()
+{
+    sendPacket(17);
+}
+
+void NetworkClient::requestEjectMass()
+{
+    sendPacket(21);
+}
+
+void NetworkClient::requestSpawnFromSpectate()
+{
+    sendPacket(2);
+}
+
+void NetworkClient::requestDelayedNickResend()
+{
+    std::lock_guard<std::mutex> lock(m_pendingMutex);
+    m_pendingNickResend = true;
+    m_nickResendTime = std::chrono::steady_clock::now() + std::chrono::milliseconds(100);
+}
+
+void NetworkClient::update()
+{
+    std::lock_guard<std::mutex> lock(m_pendingMutex);
+
+    if (m_pendingNickResend && std::chrono::steady_clock::now() >= m_nickResendTime)
+    {
+        m_pendingNickResend = false;
+        sendNick(); // приватный метод, но update() — тоже метод класса, доступ есть
+    }
 }
