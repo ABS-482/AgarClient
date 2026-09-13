@@ -330,3 +330,23 @@ float Font::buildQuads(
 
     return x - startX;
 }
+
+float Font::measureWidth(const std::string& text) const
+{
+    float x = 0.0f;
+    size_t index = 0;
+
+    while (index < text.size())
+    {
+        uint32_t codepoint = decodeUtf8(text, index);
+
+        auto it = m_glyphs.find(static_cast<int>(codepoint));
+
+        if (it == m_glyphs.end())
+            continue;
+
+        x += it->second.advance;
+    }
+
+    return x;
+}

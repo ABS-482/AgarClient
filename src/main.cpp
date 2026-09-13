@@ -159,6 +159,8 @@ int main()
 
     float aimXOld = 0.0f;
     float aimYOld = 0.0f;
+    float bestScoreSoFar = 0.0f;
+    float currentScore = 0.0f; // <- добавить рядом
     bool hasAimOld = false;
     std::chrono::steady_clock::time_point lastAimSendTime{};
     std::chrono::steady_clock::time_point lastMacroShotTime{};
@@ -252,6 +254,8 @@ int main()
 
             float totalSize = 0.0f;
 
+            float currentScore = 0.0f;
+
             for (uint32_t id : ownedIds)
             {
                 auto it = blobs->find(id);
@@ -260,22 +264,31 @@ int main()
                 {
                     auto rsIt = renderStates.find(id);
 
+                    float sx, sy, ssize;
+
                     if (rsIt != renderStates.end())
                     {
-                        sumX += rsIt->second.x;
-                        sumY += rsIt->second.y;
-                        totalSize += rsIt->second.size;
+                        sx = rsIt->second.x;
+                        sy = rsIt->second.y;
+                        ssize = rsIt->second.size;
                     }
                     else
                     {
-                        sumX += it->second.targetX;
-                        sumY += it->second.targetY;
-                        totalSize += it->second.targetSize;
+                        sx = it->second.targetX;
+                        sy = it->second.targetY;
+                        ssize = it->second.targetSize;
                     }
+
+                    sumX += sx;
+                    sumY += sy;
+                    totalSize += ssize;
+                    currentScore += (ssize * ssize) / 100.0f;
 
                     ++count;
                 }
             }
+
+            bestScoreSoFar = std::max(bestScoreSoFar, currentScore);
 
             if (totalSize > 0.0f)
             {
@@ -597,6 +610,13 @@ int main()
             1.0f, 1.0f, 1.0f
         );
 
+        constexpr float rectR = 0.1647f;
+        constexpr float rectG = 0.3922f;
+        constexpr float rectB = 0.5882f;
+        constexpr float rectA = 0.5f;
+
+        textRenderer.begin(); // ОДИН общий batch на весь UI-текст этого кадра
+
         auto leaderboard = world.getLeaderboard();
 
         if (!leaderboard.empty())
@@ -619,33 +639,25 @@ int main()
             uiPanel.draw(
                 panelCenterX, panelCenterY,
                 panelWidth, panelHeight,
-                12.0f, // corner radius
-                0.08f, 0.08f, 0.12f, 0.75f, // fill — тёмный, полупрозрачный
-                1.0f, 1.0f, 1.0f, 0.15f,    // border — едва заметный белый
-                1.5f,                       // border width
+                0.0f, //cornerRadius = 0 → прямоугольник
+                rectR, rectG, rectB, rectA,
+                0.0f, 0.0f, 0.0f, 0.0f,
+                0.0f,
                 screenW, screenH
             );
 
-            textRenderer.begin();
-
             float topY = panelCenterY - panelHeight * 0.5f + padding;
+            float rowX = screenW - panelWidth - 16.0f + padding;
 
             for (int i = 0; i < visibleCount; ++i)
             {
                 const auto& entry = leaderboard[i];
-
                 std::string line = std::to_string(i + 1) + ". " + entry.name;
 
                 float rowY = topY + rowHeight * i + rowHeight * 0.5f;
-                float rowX = screenW - panelWidth - 16.0f + padding;
 
                 textRenderer.addTextLeftAligned(font, line, rowX, rowY, 0.28f);
             }
-
-            textRenderer.end(
-                font, screenW, screenH,
-                1.0f, 1.0f, 1.0f
-            );
         }
 
         auto chatMessages = world.getChatMessages();
@@ -670,17 +682,14 @@ int main()
             uiPanel.draw(
                 panelCenterX, panelCenterY,
                 panelWidth, panelHeight,
-                12.0f,
-                0.08f, 0.08f, 0.12f, 0.65f,
-                1.0f, 1.0f, 1.0f, 0.12f,
-                1.5f,
+                0.0f,
+                rectR, rectG, rectB, rectA,
+                0.0f, 0.0f, 0.0f, 0.0f,
+                0.0f,
                 screenW, screenH
             );
 
-            textRenderer.begin();
-
             float topY = panelCenterY - panelHeight * 0.5f + padding;
-
             int startIdx = static_cast<int>(chatMessages.size()) - visibleCount;
 
             for (int i = 0; i < visibleCount; ++i)
@@ -696,12 +705,56 @@ int main()
 
                 textRenderer.addTextLeftAligned(font, line, rowX, rowY, 0.24f);
             }
-
-            textRenderer.end(
-                font, screenW, screenH,
-                1.0f, 1.0f, 1.0f
-            );
         }
+
+        // --- Личный HUD (масса/рекорд), стиль и позиция как в JS ---
+        if (!ownedIds.empty())
+        {
+            float screenW = static_cast<float>(window.width());
+            float screenH = static_cast<float>(window.height());
+
+            auto firstRsIt = renderStates.find(ownedIds[0]);
+
+            float firstX = (firstRsIt != renderStates.end()) ? firstRsIt->second.x : 0.0f;
+            float firstY = (firstRsIt != renderStates.end()) ? firstRsIt->second.y : 0.0f;
+
+            std::ostringstream hudStream;
+            hudStream << "x:" << static_cast<int>(firstX)
+                << " y:" << static_cast<int>(firstY)
+                << ". Your best: " << static_cast<int>(bestScoreSoFar)
+                << ". Now: " << static_cast<int>(currentScore)
+                << " (" << ownedIds.size() << ")";
+
+            std::string hudText = hudStream.str();
+
+            constexpr float hudFontScale = 20.0f / 70.0f; // шрифт ~20px, как SVGPlotFunction(20, ...) в JS
+
+            float textWidthPx = font.measureWidth(hudText) * hudFontScale;
+            float panelWidth = textWidthPx + 10.0f;
+            float panelHeight = 34.0f;
+
+            float panelCenterX = 10.0f + panelWidth * 0.5f;
+            float panelCenterY = screenH - 10.0f - 22.0f - 10.0f + panelHeight * 0.5f;
+
+            uiPanel.draw(
+                panelCenterX, panelCenterY,
+                panelWidth, panelHeight,
+                0.0f,
+                rectR, rectG, rectB, rectA,
+                0.0f, 0.0f, 0.0f, 0.0f,
+                0.0f,
+                screenW, screenH
+            );
+
+            textRenderer.addTextLeftAligned(font, hudText, 15.0f, panelCenterY, hudFontScale);
+        }
+
+        textRenderer.end(
+            font,
+            static_cast<float>(window.width()),
+            static_cast<float>(window.height()),
+            1.0f, 1.0f, 1.0f
+        );
 
         glBindTexture(GL_TEXTURE_2D, 0);
 

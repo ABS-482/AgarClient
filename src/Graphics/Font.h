@@ -33,6 +33,7 @@ public:
         float x, float y,
         std::vector<float>& outVertices
     ) const;
+    float measureWidth(const std::string& text) const;
 
 private:
     static constexpr int m_atlasWidth = 1024;
