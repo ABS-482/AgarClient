@@ -5,6 +5,7 @@
 
 #include "Core/FrameStats.h"
 #include "Core/FrameLimiter.h"
+#include "Core/GameModes.h"
 #include "Graphics/Shader.h"
 #include "Graphics/Window.h"
 #include "Graphics/CircleMesh.h"
@@ -26,6 +27,7 @@
 #include "Network/PacketHandler.h"
 #include "Network/ServerListFetcher.h"
 #include "Game/World.h"
+#include "UI/ModeIconManager.h"
 
 #include <ixwebsocket/IXNetSystem.h>
 
@@ -66,6 +68,7 @@ namespace
 
 enum class AppState
 {
+    SelectingMode,
     SelectingServer,
     Playing
 };
@@ -90,7 +93,11 @@ int main()
     SkinMesh skinMesh;
 
     Font font("C:/dev/AgarClient/assets/fonts/arial.otf", 70.0f, 1.0f);
+    Font menuFont("C:/dev/AgarClient/assets/fonts/arial.otf", 85.0f, 0);
+    Font gmFont("C:/dev/AgarClient/assets/fonts/arial.otf", 100.0f, 0);
+
     Shader textShader(TextShader::vertex, TextShader::fragment);
+    UIPanel uiPanel;
     TextRenderer textRenderer(textShader);
 
     GLint uCenter = circleShader.uniformLocation("uCenter");
@@ -117,9 +124,19 @@ int main()
     std::vector<float> foodInstanceData;
     Camera camera;
     FrameLimiter frameLimiter(window.refreshRate());
-    UIPanel uiPanel;
     World world;
     SkinManager skinManager;
+    ModeIconManager modeIconManager;
+
+    modeIconManager.load(
+        "MEGASPLIT",
+        "assets/icons/ms.png"
+    );
+
+    modeIconManager.load(
+        "MEGASPLIT5K",
+        "assets/icons/ms.png"
+    );
 
     struct RenderState
     {
@@ -177,6 +194,9 @@ int main()
     AppState appState = AppState::SelectingServer;
     int selectedServerIndex = 0;
     int menuScrollOffset = 0;
+    int selectedModeIndex = 0;
+
+    std::string selectedMode = gameModes[selectedModeIndex].id;
 
     std::cout << "Fetched " << serverList.size() << " servers:\n";
 
@@ -828,49 +848,142 @@ int main()
             float listX = screenW * 0.5f;
             float listTop = 60.0f;
 
+            constexpr float dialogWidth = 500.0f;
+            constexpr float dialogHeight = 600.0f;
+
+            float dialogX = screenW * 0.5f;
+            float dialogY = screenH * 0.5f;
+
+            const float dialogLeft =
+                dialogX - dialogWidth * 0.5f;
+
+            const float dialogTop =
+                dialogY - dialogHeight * 0.5f;
+
+            constexpr float modeButtonWidth = 150.0f;
+            constexpr float modeButtonHeight = 28.0f;
+            constexpr float modeButtonGap = 3.0f;
+
+            const float modesLeftX =
+                dialogLeft + 105.0f;
+
+            const float modesTopY =
+                dialogTop + 185.0f;
+
+            uiPanel.drawRoundedCorners(
+                dialogX,
+                dialogY,
+                dialogWidth,
+                dialogHeight,
+
+                250.0f,
+                250.0f,
+                50.0f,
+                50.0f,
+
+                1.0f, 1.0f, 1.0f, 1.0f,
+                0.0f, 0.0f, 0.0f, 0.0f,
+                0.0f,
+
+                screenW,
+                screenH
+            );
+
             textRenderer.begin();
 
-            for (int row = 0; row < visibleRows; ++row)
+            textRenderer.addText(
+                menuFont,
+                "PetriDish",
+                screenW * 0.5f,
+                dialogY - dialogHeight * 0.5f + 65.0f,
+                0.55f
+            );
+
+            textRenderer.addText(
+                menuFont,
+                "Total players online: 1134",
+                screenW * 0.5f,
+                dialogY - dialogHeight * 0.5f + 105.0f,
+                0.22f
+            );
+
+            textRenderer.end(
+                menuFont,
+                screenW,
+                screenH,
+                66.0f / 255.0f,
+                139.0f / 255.0f,
+                202.0f / 255.0f
+            );
+
+            for (size_t i = 0; i < gameModes.size(); ++i)
             {
-                int index = menuScrollOffset + row;
+                const float x = modesLeftX;
 
-                if (index >= static_cast<int>(serverList.size()))
-                    break;
+                const float y =
+                    modesTopY +
+                    static_cast<float>(i) *
+                    (modeButtonHeight + modeButtonGap);
 
-                const auto& entry = serverList[index];
+                const bool selected =
+                    static_cast<int>(i) == selectedModeIndex;
 
-                float rowCenterY = listTop + rowHeight * row + rowHeight * 0.5f;
+                uiPanel.drawRoundedCorners(
+                    x,
+                    y,
+                    modeButtonWidth,
+                    modeButtonHeight,
 
-                bool isSelected = (index == selectedServerIndex);
+                    5.0f,
+                    5.0f,
+                    5.0f,
+                    5.0f,
 
-                uiPanel.draw(
-                    listX, rowCenterY,
-                    listWidth, rowHeight - 2.0f,
-                    0.0f,
-                    isSelected ? 0.35f : 0.1647f,
-                    isSelected ? 0.55f : 0.3922f,
-                    isSelected ? 0.25f : 0.5882f,
-                    0.6f,
-                    0.0f, 0.0f, 0.0f, 0.0f,
-                    0.0f,
-                    screenW, screenH
-                );
+                    selected ? 0.3608f : 0.2588f,
+                    selected ? 0.7216f : 0.5451f,
+                    selected ? 0.3608f : 0.7922f,
+                    1.0f,
 
-                std::string line = entry.sname.empty()
-                    ? (entry.mode + " #" + std::to_string(entry.modenumber))
-                    : entry.sname;
+                    selected ? 0.2980f : 0.2078f,
+                    selected ? 0.6824f : 0.4941f,
+                    selected ? 0.2980f : 0.7412f,
+                    1.0f,
 
-                line += "  (" + std::to_string(entry.online) + "/" +
-                    std::to_string(entry.connectlimit) + ")";
+                    1.0f,
 
-                textRenderer.addTextLeftAligned(
-                    font, line,
-                    listX - listWidth * 0.5f + 10.0f, rowCenterY,
-                    0.24f
+                    screenW,
+                    screenH
                 );
             }
 
-            textRenderer.end(font, screenW, screenH, 1.0f, 1.0f, 1.0f);
+            textRenderer.begin();
+
+            for (size_t i = 0; i < gameModes.size(); ++i)
+            {
+                const float x = modesLeftX;
+
+                const float y =
+                    modesTopY +
+                    static_cast<float>(i) *
+                    (modeButtonHeight + modeButtonGap);
+
+                textRenderer.addText(
+                    gmFont,
+                    gameModes[i].name,
+                    x,
+                    y,
+                    0.18f
+                );
+            }
+
+            textRenderer.end(
+                gmFont,
+                screenW,
+                screenH,
+                1.0f,
+                1.0f,
+                1.0f
+            );
 
             if (input.menuConfirmPressed && !serverList.empty())
             {

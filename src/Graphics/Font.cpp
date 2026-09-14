@@ -144,7 +144,7 @@ Font::Font(const std::string& ttfPath, float pixelHeight, float borderPixels)
     }
 
     float scale = stbtt_ScaleForPixelHeight(&fontInfo, pixelHeight);
-    int radius = std::max(1, static_cast<int>(std::round(borderPixels)));
+    int radius = std::max(0, static_cast<int>(std::round(borderPixels)));
 
     // RG: R — заливка, G — заливка+обводка вместе (расширенная маска).
     std::vector<unsigned char> atlasBitmap(
