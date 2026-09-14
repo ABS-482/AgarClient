@@ -32,6 +32,8 @@ add_executable(AgarClient
     src/Graphics/SkinMesh.cpp
     src/Graphics/InstancedCircleRenderer.cpp
     src/Graphics/UIPanel.cpp
+    src/Graphics/IconRenderer.cpp
+    src/UI/ModeIconManager.cpp
     src/Input/InputManager.cpp
     src/Core/FrameStats.cpp
     src/Core/FrameLimiter.cpp

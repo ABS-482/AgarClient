@@ -2,6 +2,7 @@
 
 #include <glad/glad.h>
 #include <SDL3/SDL.h>
+#include <cctype>
 
 #include "Core/FrameStats.h"
 #include "Core/FrameLimiter.h"
@@ -28,6 +29,7 @@
 #include "Network/ServerListFetcher.h"
 #include "Game/World.h"
 #include "UI/ModeIconManager.h"
+#include "Graphics/IconRenderer.h"
 
 #include <ixwebsocket/IXNetSystem.h>
 
@@ -98,6 +100,16 @@ int main()
 
     Shader textShader(TextShader::vertex, TextShader::fragment);
     UIPanel uiPanel;
+    IconRenderer iconRenderer;
+
+    std::vector<GLuint> gameModeIconTextures(gameModes.size(), 0);
+
+    for (size_t i = 0; i < gameModes.size(); ++i)
+    {
+        gameModeIconTextures[i] = iconRenderer.loadTexture(
+            "C:/dev/AgarClient/" + gameModes[i].iconPath
+        );
+    }
     TextRenderer textRenderer(textShader);
 
     GLint uCenter = circleShader.uniformLocation("uCenter");
@@ -860,12 +872,15 @@ int main()
             const float dialogTop =
                 dialogY - dialogHeight * 0.5f;
 
-            constexpr float modeButtonWidth = 150.0f;
+            constexpr float modeButtonWidth = 130.0f;
             constexpr float modeButtonHeight = 28.0f;
             constexpr float modeButtonGap = 3.0f;
 
+            constexpr float modeIconSize = 26.0f;
+            constexpr float modeIconGap = 6.0f;
+
             const float modesLeftX =
-                dialogLeft + 105.0f;
+                dialogLeft + 110.0f;
 
             const float modesTopY =
                 dialogTop + 185.0f;
@@ -929,28 +944,50 @@ int main()
                     static_cast<int>(i) == selectedModeIndex;
 
                 uiPanel.drawRoundedCorners(
-                    x,
-                    y,
-                    modeButtonWidth,
-                    modeButtonHeight,
-
-                    5.0f,
-                    5.0f,
-                    5.0f,
-                    5.0f,
-
+                    x, y,
+                    modeButtonWidth, modeButtonHeight,
+                    5.0f, 5.0f, 5.0f, 5.0f,
                     selected ? 0.3608f : 0.2588f,
                     selected ? 0.7216f : 0.5451f,
                     selected ? 0.3608f : 0.7922f,
                     1.0f,
-
                     selected ? 0.2980f : 0.2078f,
                     selected ? 0.6824f : 0.4941f,
                     selected ? 0.2980f : 0.7412f,
                     1.0f,
-
                     1.0f,
+                    screenW, screenH
+                );
+            }
 
+            for (size_t i = 0; i < gameModes.size(); ++i)
+            {
+                const float x = modesLeftX;
+
+                const float y =
+                    modesTopY +
+                    static_cast<float>(i) *
+                    (modeButtonHeight + modeButtonGap);
+
+                GLuint iconTexture = gameModeIconTextures[i];
+
+                if (iconTexture == 0)
+                    continue;
+
+                const float buttonLeftEdge =
+                    x - modeButtonWidth * 0.5f;
+
+                const float iconCenterX =
+                    buttonLeftEdge
+                    - modeIconGap
+                    - modeIconSize * 0.5f;
+
+                iconRenderer.draw(
+                    iconTexture,
+                    iconCenterX,
+                    y,
+                    modeIconSize,
+                    modeIconSize,
                     screenW,
                     screenH
                 );
