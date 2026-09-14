@@ -58,6 +58,7 @@ public:
 
     void setMapBounds(double minX, double minY, double maxX, double maxY);
     MapBounds getMapBounds() const;
+    void reset();
 
     std::vector<uint32_t> getOwnedIds() const;
 

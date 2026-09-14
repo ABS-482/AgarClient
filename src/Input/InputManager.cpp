@@ -11,6 +11,10 @@ bool InputManager::poll(InputState& state)
     state.cycleFpsLimitPressed = false;
     state.splitRequested = false;
     state.ejectMassRequested = false;
+    state.menuUpPressed = false;
+    state.menuDownPressed = false;
+    state.menuConfirmPressed = false;
+    state.menuTogglePressed = false;
 
     SDL_Event event;
     while (SDL_PollEvent(&event))
@@ -67,6 +71,22 @@ bool InputManager::poll(InputState& state)
             else if (event.key.scancode == SDL_SCANCODE_Q)
             {
                 state.ejectMassKeyHeld = true;
+            }
+            else if (event.key.scancode == SDL_SCANCODE_UP && !event.key.repeat)
+            {
+                state.menuUpPressed = true;
+            }
+            else if (event.key.scancode == SDL_SCANCODE_DOWN && !event.key.repeat)
+            {
+                state.menuDownPressed = true;
+            }
+            else if (event.key.scancode == SDL_SCANCODE_RETURN && !event.key.repeat)
+            {
+                state.menuConfirmPressed = true;
+            }
+            else if (event.key.scancode == SDL_SCANCODE_ESCAPE && !event.key.repeat)
+            {
+                state.menuTogglePressed = true;
             }
             break;
 

@@ -22,4 +22,9 @@ struct InputState
     bool ejectMassKeyHeld = false; // true, пока клавиша физически зажата
 
     float mouseWheel = 0.0f;
+
+    bool menuUpPressed = false;
+    bool menuDownPressed = false;
+    bool menuConfirmPressed = false;
+    bool menuTogglePressed = false;
 };

@@ -185,6 +185,23 @@ void World::removeBlob(uint32_t id)
     ++m_version;
 }
 
+void World::reset()
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+
+    m_blobs.clear();
+    playerNames.clear();
+    playerSkins.clear();
+    playerColorIndexes.clear();
+    playerStickers.clear();
+    ownedIds.clear();
+    m_mapBounds = MapBounds{};
+    m_chatMessages.clear();
+    m_leaderboard.clear();
+
+    ++m_version;
+}
+
 void World::setMapBounds(double minX, double minY, double maxX, double maxY)
 {
     std::lock_guard<std::mutex> lock(m_mutex);
