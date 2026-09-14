@@ -24,6 +24,7 @@
 #include "Input/InputState.h"
 #include "Network/NetworkClient.h"
 #include "Network/PacketHandler.h"
+#include "Network/ServerListFetcher.h"
 #include "Game/World.h"
 
 #include <ixwebsocket/IXNetSystem.h>
@@ -164,6 +165,18 @@ int main()
     bool hasAimOld = false;
     std::chrono::steady_clock::time_point lastAimSendTime{};
     std::chrono::steady_clock::time_point lastMacroShotTime{};
+
+    auto serverList = ServerListFetcher::fetch();
+
+    std::cout << "Fetched " << serverList.size() << " servers:\n";
+
+    for (const auto& s : serverList)
+    {
+        std::cout << "  [" << s.id << "] " << s.sname
+            << " mode=" << s.mode
+            << " online=" << s.online << "/" << s.connectlimit
+            << " addr=" << s.address << '\n';
+    }
 
     while (running)
     {

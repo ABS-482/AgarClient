@@ -37,6 +37,7 @@ add_executable(AgarClient
     src/Core/FrameLimiter.cpp
     src/Network/NetworkClient.cpp
     src/Network/PacketHandler.cpp
+    src/Network/ServerListFetcher.cpp
     src/Game/World.cpp
     src/Game/ChatMessage.h
 )
