@@ -254,7 +254,7 @@ int main()
 
             float totalSize = 0.0f;
 
-            float currentScore = 0.0f;
+            currentScore = 0.0f;
 
             for (uint32_t id : ownedIds)
             {
@@ -664,32 +664,33 @@ int main()
 
         if (!chatMessages.empty())
         {
-            constexpr int maxVisible = 8;
+            constexpr int maxVisible = 14;
             constexpr float rowHeight = 22.0f;
             constexpr float padding = 12.0f;
 
             int visibleCount = std::min(static_cast<int>(chatMessages.size()), maxVisible);
 
-            float panelWidth = 420.0f;
-            float panelHeight = padding * 2.0f + rowHeight * visibleCount;
+            float panelWidth = 300.0f;
+            float panelHeight = padding * 2.0f + rowHeight * maxVisible; // <- фиксированная высота, всегда под maxVisible строк
 
             float screenW = static_cast<float>(window.width());
             float screenH = static_cast<float>(window.height());
 
-            float panelCenterX = panelWidth * 0.5f + 16.0f;
-            float panelCenterY = screenH - panelHeight * 0.5f - 16.0f;
+            float panelCenterX = panelWidth * 0.5f + 10.0f;
+            float hudReservedHeight = ownedIds.empty() ? 16.0f : 52.0f;
+            float panelCenterY = screenH - hudReservedHeight - panelHeight * 0.5f;
 
             uiPanel.draw(
                 panelCenterX, panelCenterY,
                 panelWidth, panelHeight,
-                0.0f,
-                rectR, rectG, rectB, rectA,
-                0.0f, 0.0f, 0.0f, 0.0f,
-                0.0f,
+                12.0f,
+                0.08f, 0.08f, 0.12f, 0.65f,
+                1.0f, 1.0f, 1.0f, 0.12f,
+                1.5f,
                 screenW, screenH
             );
 
-            float topY = panelCenterY - panelHeight * 0.5f + padding;
+            float topY = panelCenterY + panelHeight * 0.5f - padding - rowHeight * visibleCount;
             int startIdx = static_cast<int>(chatMessages.size()) - visibleCount;
 
             for (int i = 0; i < visibleCount; ++i)
@@ -701,7 +702,7 @@ int main()
                     : msg.name + ": " + msg.message;
 
                 float rowY = topY + rowHeight * i + rowHeight * 0.5f;
-                float rowX = 16.0f + padding;
+                float rowX = 10.0f + padding;
 
                 textRenderer.addTextLeftAligned(font, line, rowX, rowY, 0.24f);
             }

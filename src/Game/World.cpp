@@ -1,4 +1,5 @@
 #include "World.h"
+#include <algorithm>
 
 void World::updateFoodBlob(
     uint32_t id,
@@ -175,6 +176,12 @@ void World::removeBlob(uint32_t id)
 {
     std::lock_guard<std::mutex> lock(m_mutex);
     m_blobs.erase(id);
+
+    ownedIds.erase(
+        std::remove(ownedIds.begin(), ownedIds.end(), id),
+        ownedIds.end()
+    );
+
     ++m_version;
 }
 
