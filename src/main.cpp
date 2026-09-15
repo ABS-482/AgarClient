@@ -123,7 +123,7 @@ int main()
     );
 
     Font gmFont(
-        "C:/dev/AgarClient/assets/fonts/arial.otf",
+        "C:/dev/AgarClient/assets/fonts/movavi.otf",
         100.0f,
         0
     );
@@ -195,6 +195,11 @@ int main()
             "C:/dev/AgarClient/" + gameModes[i].iconPath
         );
     }
+
+    GLuint blueButtonTexture =
+        iconRenderer.loadTexture(
+            "C:/dev/AgarClient/assets/icons/blueButton.png"
+        );
     
     // -------------------------
     // Render state
@@ -357,6 +362,27 @@ int main()
 
             mainMenu.update(serverList);
 
+            float screenW = static_cast<float>(window.width());
+            float screenH = static_cast<float>(window.height());
+
+            if (input.leftButtonJustPressed)
+            {
+                mainMenu.handleMouseClick(
+                    input.mouseX, input.mouseY,
+                    input.leftButtonDoubleClicked,
+                    serverList,
+                    screenW, screenH
+                );
+            }
+
+            mainMenu.handleMouseDrag(
+                input.mouseX,
+                input.mouseY,
+                input.leftButton,
+                screenW,
+                screenH
+            );
+
             if (input.menuDownPressed)
             {
                 mainMenu.moveSelectionDown(serverList);
@@ -367,20 +393,27 @@ int main()
                 mainMenu.moveSelectionUp();
             }
 
-            float screenW = static_cast<float>(window.width());
-            float screenH = static_cast<float>(window.height());
-
-            mainMenu.draw(
-                serverList,
-                gameModeIconTextures,
+            mainMenu.handleMouseWheel(
+                input.mouseX,
+                input.mouseY,
+                input.mouseWheel,
                 screenW,
                 screenH
             );
 
+            mainMenu.draw(
+                serverList,
+                gameModeIconTextures,
+                blueButtonTexture,
+                screenW,
+                screenH,
+                input.mouseX,
+                input.mouseY
+            );
+
             if (mainMenu.hasConfirmedSelection(input, serverList))
             {
-                std::string url =
-                    mainMenu.selectedServerUrl(serverList);
+                std::string url = mainMenu.selectedServerUrl(serverList);
 
                 if (!url.empty())
                 {

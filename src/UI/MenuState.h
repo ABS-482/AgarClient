@@ -13,4 +13,6 @@ struct MenuState
     std::vector<size_t> visibleServerIndices;
 
     std::string selectedMode;
+
+    bool confirmedByClick = false;
 };

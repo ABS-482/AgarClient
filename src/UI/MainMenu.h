@@ -17,6 +17,17 @@
 class MainMenu
 {
 public:
+    struct MenuLayout
+    {
+        float dialogX, dialogY, dialogWidth, dialogHeight, dialogLeft, dialogTop;
+        float modesLeftX, modesTopY, modeButtonWidth, modeButtonHeight, modeButtonGap;
+        float modeIconSize, modeIconGap;
+        float serversX, serversY, serverListWidth, serverRowHeight, serverListGap;
+        float serverPaddingX, serverPaddingY;
+        int serverVisibleRows;
+        float serverTextX;
+    };
+
     MainMenu(
         UIPanel& uiPanel,
         TextRenderer& textRenderer,
@@ -28,8 +39,11 @@ public:
     void draw(
         const std::vector<ServerListEntry>& serverList,
         const std::vector<GLuint>& gameModeIconTextures,
+        GLuint blueButtonTexture,
         float screenW,
-        float screenH
+        float screenH,
+        float mouseX,
+        float mouseY
     );
 
     void update(
@@ -38,6 +52,29 @@ public:
 
     void moveSelectionDown(const std::vector<ServerListEntry>& serverList);
     void moveSelectionUp();
+
+    void handleMouseClick(
+        float mouseX, float mouseY,
+        bool doubleClick,
+        const std::vector<ServerListEntry>& serverList,
+        float screenW, float screenH
+    );
+
+    void handleMouseWheel(
+        float mouseX,
+        float mouseY,
+        float wheel,
+        float screenW,
+        float screenH
+    );
+
+    void handleMouseDrag(
+        float mouseX,
+        float mouseY,
+        bool leftButton,
+        float screenW,
+        float screenH
+    );
 
     bool hasConfirmedSelection(
         const InputState& input,
@@ -51,6 +88,8 @@ public:
     MenuState& state();
 
 private:
+    MenuLayout computeLayout(float screenW, float screenH) const;
+
     UIPanel& uiPanel;
     TextRenderer& textRenderer;
     IconRenderer& iconRenderer;
@@ -58,4 +97,8 @@ private:
     Font& menuFont;
 
     MenuState menuState;
+    bool draggingServerScrollbar = false;
+    float scrollbarDragOffset = 0.0f;
+    float serverScrollOffset = 0.0f;
+
 };

@@ -15,6 +15,7 @@ bool InputManager::poll(InputState& state)
     state.menuDownPressed = false;
     state.menuConfirmPressed = false;
     state.menuTogglePressed = false;
+    state.leftButtonDoubleClicked = false;
 
     SDL_Event event;
     while (SDL_PollEvent(&event))
@@ -37,6 +38,7 @@ bool InputManager::poll(InputState& state)
             {
                 state.leftButton = true;
                 state.leftButtonJustPressed = true;
+                state.leftButtonDoubleClicked = (event.button.clicks == 2);
             }
             break;
 

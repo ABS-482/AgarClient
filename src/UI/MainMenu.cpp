@@ -1,5 +1,17 @@
 #include "MainMenu.h"
 
+#include <algorithm>
+#include <cmath>
+
+namespace
+{
+    constexpr float kServerListHeightScale = 2.0f / 3.0f;
+    constexpr float kServerScrollbarWidth = 10.0f;
+    constexpr float kServerScrollbarMargin = 6.0f;
+    constexpr float kServerScrollbarTrackRadius = 3.0f;
+    constexpr float kServerScrollbarThumbRadius = 3.0f;
+}
+
 MainMenu::MainMenu(
     UIPanel& uiPanel,
     TextRenderer& textRenderer,
@@ -15,14 +27,92 @@ MainMenu::MainMenu(
 {
 }
 
+MainMenu::MenuLayout MainMenu::computeLayout(
+    float screenW,
+    float screenH
+) const
+{
+    MenuLayout layout{};
+
+    layout.dialogWidth = 800.0f;
+    layout.dialogHeight = 600.0f;
+
+    layout.dialogX = screenW * 0.5f;
+    layout.dialogY = screenH * 0.5f;
+
+    layout.dialogLeft =
+        layout.dialogX - layout.dialogWidth * 0.5f;
+
+    layout.dialogTop =
+        layout.dialogY - layout.dialogHeight * 0.5f;
+
+    layout.modeButtonWidth = 140.0f;
+    layout.modeButtonHeight = 35.0f;
+    layout.modeButtonGap = 3.0f;
+
+    layout.modeIconSize = 26.0f;
+    layout.modeIconGap = 6.0f;
+
+    layout.serverListWidth = 400.0f;
+    layout.serverRowHeight = 22.0f;
+    layout.serverListGap = 2.0f;
+    layout.serverVisibleRows = 20;
+
+    layout.modesLeftX =
+        layout.dialogLeft + 155.0f;
+
+    layout.modesTopY =
+        layout.dialogTop + 100.0f;
+
+    layout.serversX = layout.dialogLeft + 450.0f;
+
+    layout.serversY =
+        layout.modesTopY - 13.0f;
+
+    layout.serverPaddingX = 12.0f;
+    layout.serverPaddingY = 15.0f;
+
+    layout.serverTextX =
+        layout.serversX -
+        layout.serverListWidth * 0.5f +
+        layout.serverPaddingX;
+
+    return layout;
+}
+
 void MainMenu::update(
     const std::vector<ServerListEntry>& serverList
 )
 {
-    menuState.visibleServerIndices.clear();
+    if (gameModes.empty())
+    {
+        menuState.selectedModeIndex = -1;
+        menuState.selectedMode.clear();
+        menuState.visibleServerIndices.clear();
+        menuState.selectedServerIndex = -1;
+        serverScrollOffset = 0.0f;
+        return;
+    }
 
-    menuState.selectedMode =
+    if (menuState.selectedModeIndex < 0 ||
+        menuState.selectedModeIndex >= static_cast<int>(gameModes.size()))
+    {
+        menuState.selectedModeIndex = 0;
+    }
+
+    const std::string newSelectedMode =
         gameModes[menuState.selectedModeIndex].id;
+
+    const bool modeChanged =
+        newSelectedMode != menuState.selectedMode;
+
+    if (modeChanged)
+    {
+        serverScrollOffset = 0.0f;
+    }
+
+    menuState.selectedMode = newSelectedMode;
+    menuState.visibleServerIndices.clear();
 
     for (size_t i = 0; i < serverList.size(); ++i)
     {
@@ -31,25 +121,544 @@ void MainMenu::update(
             menuState.visibleServerIndices.push_back(i);
         }
     }
+
+    if (modeChanged || menuState.visibleServerIndices.empty())
+    {
+        menuState.selectedServerIndex =
+            menuState.visibleServerIndices.empty()
+            ? -1
+            : static_cast<int>(
+                menuState.visibleServerIndices[0]
+                );
+    }
 }
 
 void MainMenu::moveSelectionDown(
     const std::vector<ServerListEntry>& serverList
 )
 {
-    if (serverList.empty())
+    (void)serverList;
+
+    if (menuState.visibleServerIndices.empty())
         return;
 
-    menuState.selectedServerIndex = std::min(
-        menuState.selectedServerIndex + 1,
-        static_cast<int>(serverList.size()) - 1
+    int currentPos = -1;
+
+    for (size_t i = 0;
+        i < menuState.visibleServerIndices.size();
+        ++i)
+    {
+        if (
+            static_cast<int>(
+                menuState.visibleServerIndices[i]
+                ) == menuState.selectedServerIndex
+            )
+        {
+            currentPos = static_cast<int>(i);
+            break;
+        }
+    }
+
+    const int nextPos = std::min(
+        currentPos + 1,
+        static_cast<int>(
+            menuState.visibleServerIndices.size()
+            ) - 1
     );
+
+    menuState.selectedServerIndex =
+        static_cast<int>(
+            menuState.visibleServerIndices[nextPos]
+            );
 }
 
 void MainMenu::moveSelectionUp()
 {
+    if (menuState.visibleServerIndices.empty())
+        return;
+
+    int currentPos = -1;
+
+    for (size_t i = 0;
+        i < menuState.visibleServerIndices.size();
+        ++i)
+    {
+        if (
+            static_cast<int>(
+                menuState.visibleServerIndices[i]
+                ) == menuState.selectedServerIndex
+            )
+        {
+            currentPos = static_cast<int>(i);
+            break;
+        }
+    }
+
+    const int prevPos =
+        std::max(currentPos - 1, 0);
+
     menuState.selectedServerIndex =
-        std::max(menuState.selectedServerIndex - 1, 0);
+        static_cast<int>(
+            menuState.visibleServerIndices[prevPos]
+            );
+}
+
+void MainMenu::handleMouseClick(
+    float mouseX,
+    float mouseY,
+    bool doubleClick,
+    const std::vector<ServerListEntry>& serverList,
+    float screenW,
+    float screenH
+)
+{
+    (void)serverList;
+
+    const MenuLayout layout =
+        computeLayout(screenW, screenH);
+
+    // ------------------------------------------------------------
+    // Режимы
+    // ------------------------------------------------------------
+
+    for (size_t i = 0; i < gameModes.size(); ++i)
+    {
+        const float y =
+            layout.modesTopY +
+            static_cast<float>(i) *
+            (layout.modeButtonHeight +
+                layout.modeButtonGap);
+
+        const float left =
+            layout.modesLeftX -
+            layout.modeButtonWidth * 0.5f;
+
+        const float right =
+            layout.modesLeftX +
+            layout.modeButtonWidth * 0.5f;
+
+        const float top =
+            y - layout.modeButtonHeight * 0.5f;
+
+        const float bottom =
+            y + layout.modeButtonHeight * 0.5f;
+
+        if (
+            mouseX >= left &&
+            mouseX <= right &&
+            mouseY >= top &&
+            mouseY <= bottom
+            )
+        {
+            menuState.selectedModeIndex =
+                static_cast<int>(i);
+
+            return;
+        }
+    }
+
+    // ------------------------------------------------------------
+    // Серверы
+    // ------------------------------------------------------------
+
+    const float rowStep =
+        layout.serverRowHeight +
+        layout.serverListGap;
+
+    const float serverListHeight =
+        layout.serverVisibleRows *
+        layout.serverRowHeight *
+        kServerListHeightScale;
+
+    const int firstRow =
+        static_cast<int>(
+            std::floor(serverScrollOffset)
+            );
+
+    const int visibleRowCount =
+        std::max(
+            1,
+            static_cast<int>(
+                std::floor(
+                    (
+                        serverListHeight -
+                        layout.serverPaddingY -
+                        layout.serverRowHeight * 0.5f
+                        ) / rowStep
+                )
+                ) + 1
+        );
+
+    if (menuState.visibleServerIndices.empty())
+        return;
+
+    const float maxScroll =
+        std::max(
+            0.0f,
+            (
+                layout.serverPaddingY +
+                static_cast<float>(
+                    menuState.visibleServerIndices.size() - 1
+                    ) *
+                rowStep +
+                layout.serverRowHeight * 0.5f -
+                serverListHeight
+                ) /
+            rowStep
+        );
+
+    const int endRow =
+        std::min(
+            firstRow + visibleRowCount + 1,
+            static_cast<int>(
+                menuState.visibleServerIndices.size()
+                )
+        );
+
+    // ------------------------------------------------------------
+    // Скроллбар
+    // ------------------------------------------------------------
+
+    const float scrollbarTrackTop = layout.serversY + 4.0f;
+    const float scrollbarTrackBottom =
+        layout.serversY + serverListHeight - 4.0f;
+    const float scrollbarTrackHeight =
+        scrollbarTrackBottom - scrollbarTrackTop;
+
+    const float contentHeight =
+        layout.serverPaddingY +
+        static_cast<float>(menuState.visibleServerIndices.size()) * rowStep;
+
+    const float scrollbarThumbHeight =
+        std::max(28.0f,
+            scrollbarTrackHeight *
+            std::min(1.0f, serverListHeight / contentHeight));
+
+    const float scrollbarTravel =
+        std::max(0.0f, scrollbarTrackHeight - scrollbarThumbHeight);
+
+    const float scrollbarTrackLeft =
+        layout.serversX + layout.serverListWidth * 0.5f -
+        kServerScrollbarMargin - kServerScrollbarWidth;
+
+    const float scrollbarTrackRight =
+        scrollbarTrackLeft + kServerScrollbarWidth;
+
+    const float scrollbarThumbTop =
+        scrollbarTrackTop +
+        (maxScroll > 0.0f
+            ? (serverScrollOffset / maxScroll) * scrollbarTravel
+            : 0.0f);
+
+    if (
+        mouseX >= scrollbarTrackLeft &&
+        mouseX <= scrollbarTrackRight &&
+        mouseY >= scrollbarTrackTop &&
+        mouseY <= scrollbarTrackBottom
+        )
+    {
+        if (maxScroll > 0.0f && scrollbarTravel > 0.0f)
+        {
+            const float scrollbarThumbTop =
+                scrollbarTrackTop +
+                (serverScrollOffset / maxScroll) *
+                scrollbarTravel;
+
+            const float scrollbarThumbBottom =
+                scrollbarThumbTop +
+                scrollbarThumbHeight;
+
+            if (
+                mouseY >= scrollbarThumbTop &&
+                mouseY <= scrollbarThumbBottom
+                )
+            {
+                draggingServerScrollbar = true;
+
+                // Запоминаем, где именно внутри thumb был клик.
+                scrollbarDragOffset =
+                    mouseY - scrollbarThumbTop;
+            }
+            else
+            {
+                // Клик по дорожке — сразу перемещаем thumb.
+                const float targetY =
+                    std::clamp(
+                        mouseY -
+                        scrollbarThumbHeight * 0.5f,
+                        scrollbarTrackTop,
+                        scrollbarTrackTop + scrollbarTravel
+                    );
+
+                const float t =
+                    (targetY - scrollbarTrackTop) /
+                    scrollbarTravel;
+
+                serverScrollOffset =
+                    std::clamp(
+                        t * maxScroll,
+                        0.0f,
+                        maxScroll
+                    );
+            }
+        }
+
+        return;
+    }
+
+    for (int row = firstRow; row < endRow; ++row)
+    {
+        const float visibleRow =
+            static_cast<float>(row) -
+            serverScrollOffset;
+
+        const float y =
+            layout.serversY +
+            layout.serverPaddingY +
+            visibleRow * rowStep;
+
+        const float left =
+            layout.serversX -
+            layout.serverListWidth * 0.5f;
+
+        const float right =
+            layout.serversX +
+            layout.serverListWidth * 0.5f;
+
+        const float top =
+            y - layout.serverRowHeight * 0.5f;
+
+        const float bottom =
+            y + layout.serverRowHeight * 0.5f;
+
+        if (
+            mouseX >= left &&
+            mouseX <= right &&
+            mouseY >= top &&
+            mouseY <= bottom
+            )
+        {
+            const size_t serverIndex =
+                menuState.visibleServerIndices[row];
+
+            const bool wasAlreadySelected =
+                menuState.selectedServerIndex ==
+                static_cast<int>(serverIndex);
+
+            menuState.selectedServerIndex =
+                static_cast<int>(serverIndex);
+
+            if (doubleClick || wasAlreadySelected)
+            {
+                menuState.confirmedByClick = true;
+            }
+
+            return;
+        }
+    }
+}
+
+void MainMenu::handleMouseDrag(
+    float mouseX,
+    float mouseY,
+    bool leftButton,
+    float screenW,
+    float screenH
+)
+{
+    if (!leftButton)
+    {
+        draggingServerScrollbar = false;
+        scrollbarDragOffset = 0.0f;
+        return;
+    }
+
+    if (!draggingServerScrollbar)
+        return;
+
+    const MenuLayout layout =
+        computeLayout(screenW, screenH);
+
+    if (menuState.visibleServerIndices.empty())
+        return;
+
+    const float rowStep =
+        layout.serverRowHeight +
+        layout.serverListGap;
+
+    const float serverListHeight =
+        layout.serverVisibleRows *
+        layout.serverRowHeight *
+        kServerListHeightScale;
+
+    const float scrollbarTrackTop =
+        layout.serversY + 4.0f;
+
+    const float scrollbarTrackBottom =
+        layout.serversY +
+        serverListHeight -
+        4.0f;
+
+    const float scrollbarTrackHeight =
+        scrollbarTrackBottom -
+        scrollbarTrackTop;
+
+    const float contentHeight =
+        layout.serverPaddingY +
+        static_cast<float>(
+            menuState.visibleServerIndices.size()
+            ) *
+        rowStep;
+
+    const float scrollbarThumbHeight =
+        std::max(
+            28.0f,
+            scrollbarTrackHeight *
+            std::min(
+                1.0f,
+                serverListHeight / contentHeight
+            )
+        );
+
+    const float scrollbarTravel =
+        std::max(
+            0.0f,
+            scrollbarTrackHeight -
+            scrollbarThumbHeight
+        );
+
+    if (scrollbarTravel <= 0.0f)
+        return;
+
+    const float maxScroll =
+        std::max(
+            0.0f,
+            (
+                layout.serverPaddingY +
+                static_cast<float>(
+                    menuState.visibleServerIndices.size() - 1
+                    ) *
+                rowStep +
+                layout.serverRowHeight * 0.5f -
+                serverListHeight
+                ) /
+            rowStep
+        );
+
+    if (maxScroll <= 0.0f)
+        return;
+
+    // mouseY -> положение верхней границы thumb
+    const float thumbTop =
+        std::clamp(
+            mouseY -
+            scrollbarDragOffset,
+            scrollbarTrackTop,
+            scrollbarTrackTop + scrollbarTravel
+        );
+
+    const float t =
+        (thumbTop - scrollbarTrackTop) /
+        scrollbarTravel;
+
+    serverScrollOffset =
+        std::clamp(
+            t * maxScroll,
+            0.0f,
+            maxScroll
+        );
+}
+
+void MainMenu::handleMouseWheel(
+    float mouseX,
+    float mouseY,
+    float wheel,
+    float screenW,
+    float screenH
+)
+{
+    if (wheel == 0.0f)
+        return;
+
+    const MenuLayout layout =
+        computeLayout(screenW, screenH);
+
+    // ВАЖНО:
+    // Это ровно та же высота, что используется в draw().
+    const float serverListHeight =
+        layout.serverVisibleRows *
+        layout.serverRowHeight *
+        kServerListHeightScale;
+
+    const float left =
+        layout.serversX -
+        layout.serverListWidth * 0.5f;
+
+    const float right =
+        layout.serversX +
+        layout.serverListWidth * 0.5f;
+
+    const float top =
+        layout.serversY;
+
+    const float bottom =
+        layout.serversY +
+        serverListHeight;
+
+    // Колесо работает только над списком серверов.
+    if (
+        mouseX < left ||
+        mouseX > right ||
+        mouseY < top ||
+        mouseY > bottom
+        )
+    {
+        return;
+    }
+
+    if (menuState.visibleServerIndices.empty())
+    {
+        serverScrollOffset = 0.0f;
+        return;
+    }
+
+    const float rowStep =
+        layout.serverRowHeight +
+        layout.serverListGap;
+
+    // Последний элемент должен упереться нижней
+    // границей в нижнюю границу списка.
+    const float maxScroll =
+        std::max(
+            0.0f,
+            (
+                layout.serverPaddingY +
+                static_cast<float>(
+                    menuState.visibleServerIndices.size() - 1
+                    ) *
+                rowStep +
+                layout.serverRowHeight * 0.5f -
+                serverListHeight
+                ) /
+            rowStep
+        );
+
+    if (wheel > 0.0f)
+    {
+        serverScrollOffset =
+            std::max(
+                serverScrollOffset - 1.0f,
+                0.0f
+            );
+    }
+    else if (wheel < 0.0f)
+    {
+        serverScrollOffset =
+            std::min(
+                serverScrollOffset + 1.0f,
+                maxScroll
+            );
+    }
 }
 
 bool MainMenu::hasConfirmedSelection(
@@ -57,13 +666,31 @@ bool MainMenu::hasConfirmedSelection(
     const std::vector<ServerListEntry>& serverList
 )
 {
-    return input.menuConfirmPressed && !serverList.empty();
+    const bool confirmed =
+        (input.menuConfirmPressed ||
+            menuState.confirmedByClick) &&
+        !serverList.empty() &&
+        menuState.selectedServerIndex >= 0;
+
+    menuState.confirmedByClick = false;
+
+    return confirmed;
 }
 
 std::string MainMenu::selectedServerUrl(
     const std::vector<ServerListEntry>& serverList
 ) const
 {
+    if (
+        menuState.selectedServerIndex < 0 ||
+        static_cast<size_t>(
+            menuState.selectedServerIndex
+            ) >= serverList.size()
+        )
+    {
+        return {};
+    }
+
     const auto& chosen =
         serverList[menuState.selectedServerIndex];
 
@@ -87,141 +714,146 @@ MenuState& MainMenu::state()
 void MainMenu::draw(
     const std::vector<ServerListEntry>& serverList,
     const std::vector<GLuint>& gameModeIconTextures,
+    GLuint blueButtonTexture,
     float screenW,
-    float screenH
+    float screenH,
+    float mouseX,
+    float mouseY
 )
 {
-    constexpr float dialogWidth = 500.0f;
-    constexpr float dialogHeight = 600.0f;
+    const MenuLayout layout =
+        computeLayout(screenW, screenH);
 
-    const float dialogX = screenW * 0.5f;
-    const float dialogY = screenH * 0.5f;
-
-    const float dialogLeft =
-        dialogX - dialogWidth * 0.5f;
-
-    const float dialogTop =
-        dialogY - dialogHeight * 0.5f;
-
-    constexpr float modeButtonWidth = 130.0f;
-    constexpr float modeButtonHeight = 28.0f;
-    constexpr float modeButtonGap = 3.0f;
-
-    constexpr float modeIconSize = 26.0f;
-    constexpr float modeIconGap = 6.0f;
-
-    constexpr float serverListWidth = 275.0f;
-    constexpr float serverRowHeight = 22.0f;
-    constexpr float serverListGap = 2.0f;
-    constexpr int serverVisibleRows = 20;
-
-    const float modesLeftX =
-        dialogLeft + 110.0f;
-
-    const float modesTopY =
-        dialogTop + 185.0f;
-
-    const float serversX =
-        dialogLeft + 350.0f;
-
-    const float serversY =
-        modesTopY;
-
-    constexpr float serverPaddingX = 12.0f;
-    constexpr float serverPaddingY = 6.0f;
-
-    const float serverTextX =
-        serversX - serverListWidth * 0.5f + serverPaddingX;
+    // ------------------------------------------------------------
+    // Основная панель
+    // ------------------------------------------------------------
 
     uiPanel.drawRoundedCorners(
-        dialogX,
-        dialogY,
-        dialogWidth,
-        dialogHeight,
-
-        250.0f,
-        250.0f,
-        50.0f,
-        50.0f,
-
-        1.0f, 1.0f, 1.0f, 1.0f,
-        0.0f, 0.0f, 0.0f, 0.0f,
+        layout.dialogX,
+        layout.dialogY,
+        layout.dialogWidth,
+        layout.dialogHeight,
+        15.0f,
+        15.0f,
+        15.0f,
+        15.0f,
+        1.0f,
+        1.0f,
+        1.0f,
+        1.0f,
         0.0f,
-
+        0.0f,
+        0.0f,
+        0.0f,
+        0.0f,
         screenW,
         screenH
     );
+    
 
-    textRenderer.begin();
+    // ------------------------------------------------------------
+    // Кнопки режимов
+    // ------------------------------------------------------------
 
-    textRenderer.addText(
-        menuFont,
-        "PetriDish",
-        screenW * 0.5f,
-        dialogY - dialogHeight * 0.5f + 65.0f,
-        0.55f
-    );
-
-    textRenderer.addText(
-        menuFont,
-        "Total players online: 1134",
-        screenW * 0.5f,
-        dialogY - dialogHeight * 0.5f + 105.0f,
-        0.22f
-    );
-
-    textRenderer.end(
-        menuFont,
-        screenW,
-        screenH,
-        66.0f / 255.0f,
-        139.0f / 255.0f,
-        202.0f / 255.0f
-    );
-
-    // Mode buttons
     for (size_t i = 0; i < gameModes.size(); ++i)
     {
-        const float x = modesLeftX;
+        const float x =
+            layout.modesLeftX;
 
         const float y =
-            modesTopY +
+            layout.modesTopY +
             static_cast<float>(i) *
-            (modeButtonHeight + modeButtonGap);
+            (layout.modeButtonHeight +
+                layout.modeButtonGap);
 
         const bool selected =
-            static_cast<int>(i) == menuState.selectedModeIndex;
+            static_cast<int>(i) ==
+            menuState.selectedModeIndex;
 
-        uiPanel.drawRoundedCorners(
-            x, y,
-            modeButtonWidth, modeButtonHeight,
-            5.0f, 5.0f, 5.0f, 5.0f,
+        const float left =
+            x - layout.modeButtonWidth * 0.5f;
 
-            selected ? 0.3608f : 0.2588f,
-            selected ? 0.7216f : 0.5451f,
-            selected ? 0.3608f : 0.7922f,
-            1.0f,
+        const float right =
+            x + layout.modeButtonWidth * 0.5f;
 
-            selected ? 0.2980f : 0.2078f,
-            selected ? 0.6824f : 0.4941f,
-            selected ? 0.2980f : 0.7412f,
-            1.0f,
+        const float top =
+            y - layout.modeButtonHeight * 0.5f;
 
-            1.0f,
+        const float bottom =
+            y + layout.modeButtonHeight * 0.5f;
+
+        const bool hovered =
+            mouseX >= left &&
+            mouseX <= right &&
+            mouseY >= top &&
+            mouseY <= bottom;
+
+        float fillR;
+        float fillG;
+        float fillB;
+
+        float borderR;
+        float borderG;
+        float borderB;
+
+        if (selected)
+        {
+            fillR = 0.3608f;
+            fillG = 0.7216f;
+            fillB = 0.3608f;
+
+            borderR = 0.2980f;
+            borderG = 0.6824f;
+            borderB = 0.2980f;
+        }
+        else if (hovered)
+        {
+            // #3071a9
+            fillR = 48.0f / 255.0f;
+            fillG = 113.0f / 255.0f;
+            fillB = 169.0f / 255.0f;
+
+            // #285e8e
+            borderR = 40.0f / 255.0f;
+            borderG = 94.0f / 255.0f;
+            borderB = 142.0f / 255.0f;
+        }
+        else
+        {
+            fillR = 0.2588f;
+            fillG = 0.5451f;
+            fillB = 0.7922f;
+
+            borderR = 0.2078f;
+            borderG = 0.4941f;
+            borderB = 0.7412f;
+        }
+
+        iconRenderer.draw(
+            blueButtonTexture,
+            x,
+            y,
+            layout.modeButtonWidth,
+            layout.modeButtonHeight,
             screenW,
             screenH
         );
     }
 
-    // Mode icons
+    // ------------------------------------------------------------
+    // Иконки режимов
+    // ------------------------------------------------------------
+
     for (size_t i = 0; i < gameModes.size(); ++i)
     {
-        const float x = modesLeftX;
+        const float x =
+            layout.modesLeftX;
 
         const float y =
-            modesTopY +
+            layout.modesTopY +
             static_cast<float>(i) *
-            (modeButtonHeight + modeButtonGap);
+            (layout.modeButtonHeight +
+                layout.modeButtonGap);
 
         const GLuint iconTexture =
             gameModeIconTextures[i];
@@ -230,56 +862,108 @@ void MainMenu::draw(
             continue;
 
         const float buttonLeftEdge =
-            x - modeButtonWidth * 0.5f;
+            x - layout.modeButtonWidth * 0.5f;
 
         const float iconCenterX =
-            buttonLeftEdge
-            - modeIconGap
-            - modeIconSize * 0.5f;
+            buttonLeftEdge -
+            layout.modeIconGap -
+            layout.modeIconSize * 0.5f;
 
         iconRenderer.draw(
             iconTexture,
             iconCenterX,
             y,
-            modeIconSize,
-            modeIconSize,
+            layout.modeIconSize,
+            layout.modeIconSize,
             screenW,
             screenH
         );
     }
 
-    // Server list
+    // ------------------------------------------------------------
+    // Список серверов
+    // ------------------------------------------------------------
+
     textRenderer.begin();
 
     const float serverListHeight =
-        serverVisibleRows * serverRowHeight;
+        layout.serverVisibleRows *
+        layout.serverRowHeight *
+        kServerListHeightScale;
+
+    const float scrollbarWidth = 8.0f;
+    const float scrollbarGap = 6.0f;
+
+    const float textClipWidth =
+        layout.serverListWidth -
+        scrollbarWidth -
+        scrollbarGap;
 
     uiPanel.draw(
-        serversX,
-        serversY + serverListHeight * 0.5f,
-        serverListWidth,
-        serverListHeight,
+        layout.serversX,
+        layout.serversY + serverListHeight * 0.5f,
+        layout.serverListWidth, serverListHeight,
         4.0f,
-
+        1.0f, 1.0f, 1.0f, 1.0f,
+        204.0f / 255.0f, 204.0f / 255.0f, 204.0f / 255.0f, 1.0f,
         1.0f,
-        1.0f,
-        1.0f,
-        1.0f,
-
-        204.0f / 255.0f,
-        204.0f / 255.0f,
-        204.0f / 255.0f,
-        1.0f,
-
-        1.0f,
-
-        screenW,
-        screenH
+        screenW, screenH
     );
 
-    for (size_t row = 0;
-        row < menuState.visibleServerIndices.size();
-        ++row)
+    glEnable(GL_SCISSOR_TEST);
+
+    glScissor(
+        static_cast<GLint>(
+            layout.serversX -
+            layout.serverListWidth * 0.5f
+            ),
+        static_cast<GLint>(
+            screenH -
+            (layout.serversY +
+                serverListHeight)
+            ),
+        static_cast<GLint>(
+            textClipWidth
+            ),
+        static_cast<GLint>(
+            serverListHeight
+            )
+    );
+
+    const float rowStep =
+        layout.serverRowHeight +
+        layout.serverListGap;
+
+    const int firstRow =
+        static_cast<int>(
+            std::floor(serverScrollOffset)
+            );
+
+    const int visibleRowCount =
+        std::max(
+            1,
+            static_cast<int>(
+                std::floor(
+                    (
+                        serverListHeight -
+                        layout.serverPaddingY -
+                        layout.serverRowHeight * 0.5f
+                        ) / rowStep
+                )
+                ) + 1
+        );
+
+    const int endRow =
+        std::min(
+            firstRow +
+            visibleRowCount +
+            1,
+            static_cast<int>(
+                menuState.visibleServerIndices.size()
+                )
+        );
+
+    for (int row = firstRow; row < endRow; ++row)
     {
         const size_t serverIndex =
             menuState.visibleServerIndices[row];
@@ -287,29 +971,91 @@ void MainMenu::draw(
         const auto& server =
             serverList[serverIndex];
 
+        const float visibleRow =
+            static_cast<float>(row) -
+            serverScrollOffset;
+
         const float y =
-            serversY +
-            serverPaddingY +
-            static_cast<float>(row) *
-            (serverRowHeight + serverListGap);
+            layout.serversY +
+            layout.serverPaddingY +
+            visibleRow * rowStep;
 
         const bool selected =
             static_cast<int>(serverIndex) ==
             menuState.selectedServerIndex;
 
-        (void)selected;
+        const float left =
+            layout.serversX -
+            layout.serverListWidth * 0.5f;
 
-        const std::string line =
-            server.sname +
-            "   " +
-            std::to_string(server.online) +
-            "/" +
-            std::to_string(server.connectlimit);
+        const float right =
+            layout.serversX +
+            layout.serverListWidth * 0.5f;
+
+        const float top =
+            y - layout.serverRowHeight * 0.5f;
+
+        const float bottom =
+            y + layout.serverRowHeight * 0.5f;
+
+        const bool hovered =
+            mouseX >= left &&
+            mouseX <= right &&
+            mouseY >= top &&
+            mouseY <= bottom;
+
+        if (selected)
+        {
+            // #449d44
+            uiPanel.draw(
+                layout.serversX,
+                y,
+                layout.serverListWidth - 6.0f,
+                layout.serverRowHeight - 2.0f,
+                3.0f,
+                68.0f / 255.0f,
+                157.0f / 255.0f,
+                68.0f / 255.0f,
+                1.0f,
+                0.0f,
+                0.0f,
+                0.0f,
+                0.0f,
+                0.0f,
+                screenW,
+                screenH
+            );
+        }
+        else if (hovered)
+        {
+            // #5cb85c
+            uiPanel.draw(
+                layout.serversX,
+                y,
+                layout.serverListWidth - 6.0f,
+                layout.serverRowHeight - 2.0f,
+                3.0f,
+                92.0f / 255.0f,
+                184.0f / 255.0f,
+                92.0f / 255.0f,
+                1.0f,
+                0.0f,
+                0.0f,
+                0.0f,
+                0.0f,
+                0.0f,
+                screenW,
+                screenH
+            );
+        }
+
+        const std::string& line =
+            server.displayText;
 
         textRenderer.addTextLeftAligned(
             gmFont,
             line,
-            serverTextX,
+            layout.serverTextX,
             y,
             0.16f
         );
@@ -324,17 +1070,148 @@ void MainMenu::draw(
         0.0f
     );
 
-    // Mode names
+    glDisable(GL_SCISSOR_TEST);
+
+    // ------------------------------------------------------------
+    // Скроллбар списка серверов
+    // ------------------------------------------------------------
+
+    const float maxScroll =
+        std::max(
+            0.0f,
+            (
+                layout.serverPaddingY +
+                static_cast<float>(
+                    menuState.visibleServerIndices.size() - 1
+                    ) *
+                rowStep +
+                layout.serverRowHeight * 0.5f -
+                serverListHeight
+                ) /
+            rowStep
+        );
+
+    if (maxScroll > 0.0f)
+    {
+        const float scrollbarTrackTop =
+            layout.serversY + 4.0f;
+
+        const float scrollbarTrackBottom =
+            layout.serversY +
+            serverListHeight -
+            4.0f;
+
+        const float contentHeight =
+            layout.serverPaddingY +
+            static_cast<float>(
+                menuState.visibleServerIndices.size()
+                ) *
+            rowStep;
+
+        const float scrollbarTrackHeight =
+            scrollbarTrackBottom -
+            scrollbarTrackTop;
+
+        const float scrollbarThumbHeight =
+            std::max(
+                28.0f,
+                scrollbarTrackHeight *
+                std::min(
+                    1.0f,
+                    serverListHeight / contentHeight
+                )
+            );
+
+        const float scrollbarTravel =
+            std::max(
+                0.0f,
+                scrollbarTrackHeight -
+                scrollbarThumbHeight
+            );
+
+        const float scrollbarX =
+            layout.serversX +
+            layout.serverListWidth * 0.5f -
+            kServerScrollbarMargin -
+            kServerScrollbarWidth * 0.5f;
+
+        const float scrollbarTrackLeft =
+            scrollbarX -
+            kServerScrollbarWidth * 0.5f;
+
+        const float scrollbarTrackRight =
+            scrollbarX +
+            kServerScrollbarWidth * 0.5f;
+
+        const float scrollbarThumbTop =
+            scrollbarTrackTop +
+            (serverScrollOffset / maxScroll) *
+            scrollbarTravel;
+
+        const bool scrollbarHovered =
+            mouseX >= scrollbarTrackLeft &&
+            mouseX <= scrollbarTrackRight &&
+            mouseY >= scrollbarThumbTop &&
+            mouseY <=
+            scrollbarThumbTop +
+            scrollbarThumbHeight;
+
+        uiPanel.draw(
+            scrollbarX,
+            (scrollbarTrackTop + scrollbarTrackBottom) * 0.5f,
+            kServerScrollbarWidth,
+            scrollbarTrackHeight,
+            kServerScrollbarTrackRadius,
+            230.0f / 255.0f,
+            230.0f / 255.0f,
+            230.0f / 255.0f,
+            1.0f,
+            0.0f, 0.0f, 0.0f, 0.0f,
+            0.0f,
+            screenW,
+            screenH
+        );
+
+        uiPanel.draw(
+            scrollbarX,
+            scrollbarThumbTop +
+            scrollbarThumbHeight * 0.5f,
+            kServerScrollbarWidth,
+            scrollbarThumbHeight,
+            kServerScrollbarThumbRadius,
+            scrollbarHovered
+            ? 120.0f / 255.0f
+            : 150.0f / 255.0f,
+            scrollbarHovered
+            ? 120.0f / 255.0f
+            : 150.0f / 255.0f,
+            scrollbarHovered
+            ? 120.0f / 255.0f
+            : 150.0f / 255.0f,
+            1.0f,
+            0.0f, 0.0f, 0.0f, 0.0f,
+            0.0f,
+            screenW,
+            screenH
+        );
+    }
+
+    // ------------------------------------------------------------
+    // Названия режимов
+    // ------------------------------------------------------------
+
     textRenderer.begin();
 
     for (size_t i = 0; i < gameModes.size(); ++i)
     {
-        const float x = modesLeftX;
+        const float x =
+            layout.modesLeftX;
 
         const float y =
-            modesTopY +
+            layout.modesTopY +
             static_cast<float>(i) *
-            (modeButtonHeight + modeButtonGap);
+            (layout.modeButtonHeight +
+                layout.modeButtonGap);
 
         textRenderer.addText(
             gmFont,

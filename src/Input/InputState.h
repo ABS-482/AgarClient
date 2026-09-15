@@ -26,5 +26,7 @@ struct InputState
     bool menuUpPressed = false;
     bool menuDownPressed = false;
     bool menuConfirmPressed = false;
+    bool leftButtonDoubleClicked = false;
     bool menuTogglePressed = false;
+
 };
