@@ -33,7 +33,10 @@ add_executable(AgarClient
     src/Graphics/InstancedCircleRenderer.cpp
     src/Graphics/UIPanel.cpp
     src/Graphics/IconRenderer.cpp
+    src/Graphics/GameRenderer.cpp
+    src/Graphics/GameHUD.cpp
     src/UI/ModeIconManager.cpp
+    src/UI/MainMenu.cpp
     src/Input/InputManager.cpp
     src/Core/FrameStats.cpp
     src/Core/FrameLimiter.cpp
@@ -42,6 +45,9 @@ add_executable(AgarClient
     src/Network/ServerListFetcher.cpp
     src/Game/World.cpp
     src/Game/ChatMessage.h
+    src/Game/AimController.cpp
+    src/Game/PlayerTracker.cpp
+    src/Game/GameUpdater.cpp
 )
 
 target_link_libraries(AgarClient PRIVATE
