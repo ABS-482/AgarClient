@@ -77,6 +77,27 @@ MainMenu::MenuLayout MainMenu::computeLayout(
         layout.serverListWidth * 0.5f +
         layout.serverPaddingX;
 
+    layout.serverButtonWidth = 350.0f;
+    layout.serverButtonHeight = 82.0f;
+
+    layout.playButtonWidth = 225.0f;
+    layout.playButtonHeight = 55.0f;
+
+    layout.spectateButtonWidth = layout.playButtonWidth;
+    layout.spectateButtonHeight = layout.playButtonHeight;
+
+    layout.actionButtonGap = 10.0f;
+
+    const float serverListHeight =
+        layout.serverVisibleRows *
+        layout.serverRowHeight *
+        kServerListHeightScale;
+
+    layout.actionButtonsY =
+        layout.serversY +
+        serverListHeight +
+        25.0f;
+
     return layout;
 }
 
@@ -258,22 +279,45 @@ void MainMenu::handleMouseClick(
     }
 
     // ------------------------------------------------------------
-    // Серверы
-    // ------------------------------------------------------------
+// Серверы
+// ------------------------------------------------------------
 
     const float rowStep =
         layout.serverRowHeight +
         layout.serverListGap;
 
+    const float lastModeY =
+        layout.modesTopY +
+        static_cast<float>(gameModes.size() - 1) *
+        (
+            layout.modeButtonHeight +
+            layout.modeButtonGap
+            );
+
+    const float spectateY =
+        lastModeY;
+
+    const float playY =
+        spectateY -
+        layout.playButtonHeight -
+        10.0f;
+
+    const float serverListTop =
+        layout.serversY;
+
+    const float serverListBottom =
+        playY -
+        layout.playButtonHeight * 0.5f -
+        15.0f;
+
     const float serverListHeight =
-        layout.serverVisibleRows *
-        layout.serverRowHeight *
-        kServerListHeightScale;
+        serverListBottom -
+        serverListTop;
 
     const int firstRow =
         static_cast<int>(
             std::floor(serverScrollOffset)
-            );
+        );
 
     const int visibleRowCount =
         std::max(
@@ -338,8 +382,9 @@ void MainMenu::handleMouseClick(
         std::max(0.0f, scrollbarTrackHeight - scrollbarThumbHeight);
 
     const float scrollbarTrackLeft =
-        layout.serversX + layout.serverListWidth * 0.5f -
-        kServerScrollbarMargin - kServerScrollbarWidth;
+        layout.serversX +
+        layout.serverListWidth * 0.5f +
+        kServerScrollbarMargin;
 
     const float scrollbarTrackRight =
         scrollbarTrackLeft + kServerScrollbarWidth;
@@ -458,6 +503,95 @@ void MainMenu::handleMouseClick(
     }
 }
 
+void MainMenu::handleMouseRelease(
+    float mouseX,
+    float mouseY,
+    float screenW,
+    float screenH
+)
+{
+    const MenuLayout layout =
+        computeLayout(screenW, screenH);
+
+    const float playX =
+        layout.serversX;
+
+    const float playY =
+        layout.modesTopY +
+        static_cast<float>(gameModes.size() - 1) *
+        (
+            layout.modeButtonHeight +
+            layout.modeButtonGap
+            ) -
+        layout.playButtonHeight -
+        10.0f;
+
+    const float playLeft =
+        playX -
+        layout.playButtonWidth * 0.5f;
+
+    const float playRight =
+        playX +
+        layout.playButtonWidth * 0.5f;
+
+    const float playTop =
+        playY -
+        layout.playButtonHeight * 0.5f;
+
+    const float playBottom =
+        playY +
+        layout.playButtonHeight * 0.5f;
+
+    if (
+        mouseX >= playLeft &&
+        mouseX <= playRight &&
+        mouseY >= playTop &&
+        mouseY <= playBottom
+        )
+    {
+        menuState.confirmedByClick = true;
+        return;
+    }
+
+    const float spectateX =
+        layout.serversX;
+
+    const float spectateY =
+        layout.modesTopY +
+        static_cast<float>(gameModes.size() - 1) *
+        (
+            layout.modeButtonHeight +
+            layout.modeButtonGap
+            );
+
+    const float spectateLeft =
+        spectateX -
+        layout.spectateButtonWidth * 0.5f;
+
+    const float spectateRight =
+        spectateX +
+        layout.spectateButtonWidth * 0.5f;
+
+    const float spectateTop =
+        spectateY -
+        layout.spectateButtonHeight * 0.5f;
+
+    const float spectateBottom =
+        spectateY +
+        layout.spectateButtonHeight * 0.5f;
+
+    if (
+        mouseX >= spectateLeft &&
+        mouseX <= spectateRight &&
+        mouseY >= spectateTop &&
+        mouseY <= spectateBottom
+        )
+    {
+        // Пока ничего не делаем.
+        return;
+    }
+}
+
 void MainMenu::handleMouseDrag(
     float mouseX,
     float mouseY,
@@ -486,18 +620,39 @@ void MainMenu::handleMouseDrag(
         layout.serverRowHeight +
         layout.serverListGap;
 
+    const float lastModeY =
+        layout.modesTopY +
+        static_cast<float>(gameModes.size() - 1) *
+        (
+            layout.modeButtonHeight +
+            layout.modeButtonGap
+            );
+
+    const float spectateY =
+        lastModeY;
+
+    const float playY =
+        spectateY -
+        layout.playButtonHeight -
+        10.0f;
+
+    const float serverListTop =
+        layout.serversY;
+
+    const float serverListBottom =
+        playY -
+        layout.playButtonHeight * 0.5f -
+        15.0f;
+
     const float serverListHeight =
-        layout.serverVisibleRows *
-        layout.serverRowHeight *
-        kServerListHeightScale;
+        serverListBottom -
+        serverListTop;
 
     const float scrollbarTrackTop =
         layout.serversY + 4.0f;
 
     const float scrollbarTrackBottom =
-        layout.serversY +
-        serverListHeight -
-        4.0f;
+        serverListBottom - 4.0f;
 
     const float scrollbarTrackHeight =
         scrollbarTrackBottom -
@@ -583,12 +738,33 @@ void MainMenu::handleMouseWheel(
     const MenuLayout layout =
         computeLayout(screenW, screenH);
 
-    // ВАЖНО:
-    // Это ровно та же высота, что используется в draw().
+    const float lastModeY =
+        layout.modesTopY +
+        static_cast<float>(gameModes.size() - 1) *
+        (
+            layout.modeButtonHeight +
+            layout.modeButtonGap
+            );
+
+    const float spectateY =
+        lastModeY;
+
+    const float playY =
+        spectateY -
+        layout.playButtonHeight -
+        10.0f;
+
+    const float serverListTop =
+        layout.serversY;
+
+    const float serverListBottom =
+        playY -
+        layout.playButtonHeight * 0.5f -
+        15.0f;
+
     const float serverListHeight =
-        layout.serverVisibleRows *
-        layout.serverRowHeight *
-        kServerListHeightScale;
+        serverListBottom -
+        serverListTop;
 
     const float left =
         layout.serversX -
@@ -599,11 +775,10 @@ void MainMenu::handleMouseWheel(
         layout.serverListWidth * 0.5f;
 
     const float top =
-        layout.serversY;
+        serverListTop;
 
     const float bottom =
-        layout.serversY +
-        serverListHeight;
+        serverListBottom;
 
     // Колесо работает только над списком серверов.
     if (
@@ -715,6 +890,8 @@ void MainMenu::draw(
     const std::vector<ServerListEntry>& serverList,
     const std::vector<GLuint>& gameModeIconTextures,
     GLuint blueButtonTexture,
+    GLuint redButtonTexture,
+    GLuint yellowButtonTexture,
     float screenW,
     float screenH,
     float mouseX,
@@ -881,34 +1058,40 @@ void MainMenu::draw(
     }
 
     // ------------------------------------------------------------
-    // Список серверов
-    // ------------------------------------------------------------
+// Список серверов
+// ------------------------------------------------------------
 
-    textRenderer.begin();
+    const float lastModeY =
+        layout.modesTopY +
+        static_cast<float>(gameModes.size() - 1) *
+        (
+            layout.modeButtonHeight +
+            layout.modeButtonGap
+            );
+
+    const float spectateY =
+        lastModeY;
+
+    const float playY =
+        spectateY -
+        layout.playButtonHeight -
+        10.0f;
+
+    // Верхняя граница списка
+    const float serverListTop =
+        layout.serversY;
+
+    // Нижняя граница списка — до верхнего края Play
+    const float serverListBottom =
+        playY -
+        layout.playButtonHeight * 0.5f -
+        15.0f;
 
     const float serverListHeight =
-        layout.serverVisibleRows *
-        layout.serverRowHeight *
-        kServerListHeightScale;
+        serverListBottom -
+        serverListTop;
 
-    const float scrollbarWidth = 8.0f;
-    const float scrollbarGap = 6.0f;
-
-    const float textClipWidth =
-        layout.serverListWidth -
-        scrollbarWidth -
-        scrollbarGap;
-
-    uiPanel.draw(
-        layout.serversX,
-        layout.serversY + serverListHeight * 0.5f,
-        layout.serverListWidth, serverListHeight,
-        4.0f,
-        1.0f, 1.0f, 1.0f, 1.0f,
-        204.0f / 255.0f, 204.0f / 255.0f, 204.0f / 255.0f, 1.0f,
-        1.0f,
-        screenW, screenH
-    );
+    textRenderer.begin();
 
     glEnable(GL_SCISSOR_TEST);
 
@@ -919,11 +1102,10 @@ void MainMenu::draw(
             ),
         static_cast<GLint>(
             screenH -
-            (layout.serversY +
-                serverListHeight)
+            (layout.serversY + serverListHeight)
             ),
         static_cast<GLint>(
-            textClipWidth
+            layout.serverListWidth
             ),
         static_cast<GLint>(
             serverListHeight
@@ -1006,16 +1188,16 @@ void MainMenu::draw(
 
         if (selected)
         {
-            // #449d44
+            // #4691CD
             uiPanel.draw(
                 layout.serversX,
                 y,
                 layout.serverListWidth - 6.0f,
                 layout.serverRowHeight - 2.0f,
                 3.0f,
-                68.0f / 255.0f,
-                157.0f / 255.0f,
-                68.0f / 255.0f,
+                70.0f / 255.0f,
+                145.0f / 255.0f,
+                205.0f / 255.0f,
                 1.0f,
                 0.0f,
                 0.0f,
@@ -1028,16 +1210,16 @@ void MainMenu::draw(
         }
         else if (hovered)
         {
-            // #5cb85c
+            // #6FA9D1
             uiPanel.draw(
                 layout.serversX,
                 y,
                 layout.serverListWidth - 6.0f,
                 layout.serverRowHeight - 2.0f,
                 3.0f,
-                92.0f / 255.0f,
-                184.0f / 255.0f,
-                92.0f / 255.0f,
+                111.0f / 255.0f,
+                169.0f / 255.0f,
+                209.0f / 255.0f,
                 1.0f,
                 0.0f,
                 0.0f,
@@ -1071,6 +1253,56 @@ void MainMenu::draw(
     );
 
     glDisable(GL_SCISSOR_TEST);
+
+    const float playX = layout.serversX;
+    const float spectateX = layout.serversX;
+
+    iconRenderer.draw(
+        redButtonTexture,
+        playX,
+        playY,
+        layout.playButtonWidth,
+        layout.playButtonHeight,
+        screenW,
+        screenH
+    );
+
+    iconRenderer.draw(
+        yellowButtonTexture,
+        spectateX,
+        spectateY,
+        layout.spectateButtonWidth,
+        layout.spectateButtonHeight,
+        screenW,
+        screenH
+    );
+
+    textRenderer.begin();
+
+    textRenderer.addText(
+        gmFont,
+        "Play",
+        playX,
+        playY,
+        0.24f
+    );
+
+    textRenderer.addText(
+        gmFont,
+        "Spectate",
+        spectateX,
+        spectateY,
+        0.24f
+    );
+
+    textRenderer.end(
+        gmFont,
+        screenW,
+        screenH,
+        1.0f,
+        1.0f,
+        1.0f
+    );
 
     // ------------------------------------------------------------
     // Скроллбар списка серверов
@@ -1131,17 +1363,18 @@ void MainMenu::draw(
 
         const float scrollbarX =
             layout.serversX +
-            layout.serverListWidth * 0.5f -
-            kServerScrollbarMargin -
+            layout.serverListWidth * 0.5f +
+            kServerScrollbarMargin +
             kServerScrollbarWidth * 0.5f;
 
         const float scrollbarTrackLeft =
-            scrollbarX -
-            kServerScrollbarWidth * 0.5f;
+            layout.serversX +
+            layout.serverListWidth * 0.5f +
+            kServerScrollbarMargin;
 
         const float scrollbarTrackRight =
-            scrollbarX +
-            kServerScrollbarWidth * 0.5f;
+            scrollbarTrackLeft +
+            kServerScrollbarWidth;
 
         const float scrollbarThumbTop =
             scrollbarTrackTop +

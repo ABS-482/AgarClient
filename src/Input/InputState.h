@@ -16,6 +16,8 @@ struct InputState
 
     bool leftButtonJustPressed = false;
 
+    bool leftButtonJustReleased = false;
+
     bool splitRequested = false;
     bool ejectMassRequested = false;
 

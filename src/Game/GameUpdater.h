@@ -26,7 +26,8 @@ public:
         const std::vector<uint32_t>& ownedIds,
         float deltaTime,
         float screenW,
-        float screenH
+        float screenH,
+        bool menuOpen
     );
 
 private:

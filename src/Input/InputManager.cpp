@@ -7,6 +7,7 @@ bool InputManager::poll(InputState& state)
     m_mouseEventsThisFrame = 0;
     state.spawnRequestPressed = false;
     state.leftButtonJustPressed = false;
+    state.leftButtonJustReleased = false;
     state.mouseWheel = 0.0f;
     state.cycleFpsLimitPressed = false;
     state.splitRequested = false;
@@ -46,6 +47,7 @@ bool InputManager::poll(InputState& state)
             if (event.button.button == SDL_BUTTON_LEFT)
             {
                 state.leftButton = false;
+                state.leftButtonJustReleased = true;
             }
             break;
 

@@ -20,10 +20,22 @@ public:
     struct MenuLayout
     {
         float dialogX, dialogY, dialogWidth, dialogHeight, dialogLeft, dialogTop;
-        float modesLeftX, modesTopY, modeButtonWidth, modeButtonHeight, modeButtonGap;
+
+        float modesLeftX, modesTopY;
+        float modeButtonWidth, modeButtonHeight, modeButtonGap;
+
         float modeIconSize, modeIconGap;
-        float serversX, serversY, serverListWidth, serverRowHeight, serverListGap;
+
+        float serversX, serversY;
+        float serverListWidth, serverRowHeight, serverListGap;
+        float serverButtonWidth, serverButtonHeight;
         float serverPaddingX, serverPaddingY;
+
+        float playButtonWidth, playButtonHeight;
+        float spectateButtonWidth, spectateButtonHeight;
+        float actionButtonGap;
+        float actionButtonsY;
+
         int serverVisibleRows;
         float serverTextX;
     };
@@ -40,6 +52,8 @@ public:
         const std::vector<ServerListEntry>& serverList,
         const std::vector<GLuint>& gameModeIconTextures,
         GLuint blueButtonTexture,
+        GLuint redButtonTexture,
+        GLuint yellowButtonTexture,
         float screenW,
         float screenH,
         float mouseX,
@@ -58,6 +72,13 @@ public:
         bool doubleClick,
         const std::vector<ServerListEntry>& serverList,
         float screenW, float screenH
+    );
+
+    void handleMouseRelease(
+        float mouseX,
+        float mouseY,
+        float screenW,
+        float screenH
     );
 
     void handleMouseWheel(

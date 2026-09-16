@@ -200,6 +200,16 @@ int main()
         iconRenderer.loadTexture(
             "C:/dev/AgarClient/assets/icons/blueButton.png"
         );
+
+    GLuint redButtonTexture =
+        iconRenderer.loadTexture(
+            "C:/dev/AgarClient/assets/icons/redButton.png"
+        );
+
+    GLuint yellowButtonTexture =
+        iconRenderer.loadTexture(
+            "C:/dev/AgarClient/assets/icons/yellowButton.png"
+        );
     
     // -------------------------
     // Render state
@@ -257,6 +267,8 @@ int main()
 
     bool running = true;
 
+    bool menuOpen = false;
+
     auto serverList = ServerListFetcher::fetch();
 
     AppState appState = AppState::SelectingServer;
@@ -274,55 +286,104 @@ int main()
 
         running = inputManager.poll(input);
 
+        const float screenW =
+            static_cast<float>(window.width());
+
+        const float screenH =
+            static_cast<float>(window.height());
+
         if (appState == AppState::Playing)
         {
+            // --------------------------------------------------------
+            // Меню по ESC
+            // --------------------------------------------------------
 
-            if (input.spawnRequestPressed)
+            if (input.menuTogglePressed)
             {
-                network.requestSpawn();
+                menuOpen = !menuOpen;
             }
 
             auto blobs = world.snapshot();
-
             auto ownedIds = world.getOwnedIds();
 
-            if ((input.splitRequested || input.ejectMassRequested) && !ownedIds.empty())
+            // --------------------------------------------------------
+            // Игровой ввод
+            // --------------------------------------------------------
+
+            if (!menuOpen)
             {
-                aimController.trySendFreshAim(
-                    input,
-                    static_cast<float>(window.width()),
-                    static_cast<float>(window.height()),
-                    true
-                );
-
-                if (input.splitRequested)
+                if (!ownedIds.empty())
                 {
-                    network.requestSplit();
-                }
-
-                if (input.ejectMassRequested)
-                {
-                    network.requestEjectMass();
-                }
-            }
-
-            if (input.ejectMassKeyHeld && !ownedIds.empty())
-            {
-                auto nowMacro = std::chrono::steady_clock::now();
-
-                if (nowMacro - gameState.lastMacroShotTime >= std::chrono::milliseconds(40))
-                {
-                    gameState.lastMacroShotTime = nowMacro;
-
                     aimController.trySendFreshAim(
                         input,
-                        static_cast<float>(window.width()),
-                        static_cast<float>(window.height()),
+                        screenW,
+                        screenH,
+                        false
+                    );
+                }
+                
+                if (input.spawnRequestPressed)
+                {
+                    network.requestSpawn();
+                }
+
+
+                if (
+                    (input.splitRequested ||
+                        input.ejectMassRequested) &&
+                    !ownedIds.empty()
+                    )
+                {
+                    aimController.trySendFreshAim(
+                        input,
+                        screenW,
+                        screenH,
                         true
                     );
-                    network.requestEjectMass();
+
+                    if (input.splitRequested)
+                    {
+                        network.requestSplit();
+                    }
+
+                    if (input.ejectMassRequested)
+                    {
+                        network.requestEjectMass();
+                    }
+                }
+
+                if (
+                    input.ejectMassKeyHeld &&
+                    !ownedIds.empty()
+                    )
+                {
+                    auto nowMacro =
+                        std::chrono::steady_clock::now();
+
+                    if (
+                        nowMacro -
+                        gameState.lastMacroShotTime >=
+                        std::chrono::milliseconds(40)
+                        )
+                    {
+                        gameState.lastMacroShotTime =
+                            nowMacro;
+
+                        aimController.trySendFreshAim(
+                            input,
+                            screenW,
+                            screenH,
+                            true
+                        );
+
+                        network.requestEjectMass();
+                    }
                 }
             }
+
+            // --------------------------------------------------------
+            // Обновление игры
+            // --------------------------------------------------------
 
             playerTracker.update(
                 blobs,
@@ -334,44 +395,149 @@ int main()
                 input,
                 ownedIds,
                 static_cast<float>(stats.deltaTime()),
-                static_cast<float>(window.width()),
-                static_cast<float>(window.height())
+                screenW,
+                screenH,
+                menuOpen
             );
+
+            // --------------------------------------------------------
+            // Рендер игры
+            // --------------------------------------------------------
 
             gameRenderer.draw(
                 blobs,
                 ownedIds,
                 renderStates,
-                static_cast<float>(window.width()),
-                static_cast<float>(window.height())
+                screenW,
+                screenH
             );
 
             gameHud.draw(
                 ownedIds,
                 renderStates,
-                static_cast<float>(window.width()),
-                static_cast<float>(window.height())
+                screenW,
+                screenH
             );
 
             glBindTexture(GL_TEXTURE_2D, 0);
+
+            // --------------------------------------------------------
+            // Меню поверх игры
+            // --------------------------------------------------------
+
+            if (menuOpen)
+            {
+                mainMenu.update(serverList);
+
+                if (input.leftButtonJustPressed)
+                {
+                    mainMenu.handleMouseClick(
+                        input.mouseX,
+                        input.mouseY,
+                        input.leftButtonDoubleClicked,
+                        serverList,
+                        screenW,
+                        screenH
+                    );
+                }
+
+                if (input.leftButtonJustReleased)
+                {
+                    mainMenu.handleMouseRelease(
+                        input.mouseX,
+                        input.mouseY,
+                        screenW,
+                        screenH
+                    );
+
+                    if (
+                        mainMenu.hasConfirmedSelection(
+                            input,
+                            serverList
+                        )
+                        )
+                    {
+                        // Play больше не подключается заново.
+                        // Мы уже находимся в Playing.
+                        menuOpen = false;
+                    }
+                }
+
+                mainMenu.handleMouseDrag(
+                    input.mouseX,
+                    input.mouseY,
+                    input.leftButton,
+                    screenW,
+                    screenH
+                );
+
+                if (input.menuDownPressed)
+                {
+                    mainMenu.moveSelectionDown(serverList);
+                }
+
+                if (input.menuUpPressed)
+                {
+                    mainMenu.moveSelectionUp();
+                }
+
+                mainMenu.handleMouseWheel(
+                    input.mouseX,
+                    input.mouseY,
+                    input.mouseWheel,
+                    screenW,
+                    screenH
+                );
+
+                mainMenu.draw(
+                    serverList,
+                    gameModeIconTextures,
+                    blueButtonTexture,
+                    redButtonTexture,
+                    yellowButtonTexture,
+                    screenW,
+                    screenH,
+                    input.mouseX,
+                    input.mouseY
+                );
+            }
         }
         else
         {
-            glClearColor(0.05f, 0.05f, 0.07f, 1.0f);
+            // --------------------------------------------------------
+            // Экран выбора сервера
+            // --------------------------------------------------------
+
+            glClearColor(
+                0.05f,
+                0.05f,
+                0.07f,
+                1.0f
+            );
+
             glClear(GL_COLOR_BUFFER_BIT);
 
             mainMenu.update(serverList);
 
-            float screenW = static_cast<float>(window.width());
-            float screenH = static_cast<float>(window.height());
-
             if (input.leftButtonJustPressed)
             {
                 mainMenu.handleMouseClick(
-                    input.mouseX, input.mouseY,
+                    input.mouseX,
+                    input.mouseY,
                     input.leftButtonDoubleClicked,
                     serverList,
-                    screenW, screenH
+                    screenW,
+                    screenH
+                );
+            }
+
+            if (input.leftButtonJustReleased)
+            {
+                mainMenu.handleMouseRelease(
+                    input.mouseX,
+                    input.mouseY,
+                    screenW,
+                    screenH
                 );
             }
 
@@ -405,15 +571,23 @@ int main()
                 serverList,
                 gameModeIconTextures,
                 blueButtonTexture,
+                redButtonTexture,
+                yellowButtonTexture,
                 screenW,
                 screenH,
                 input.mouseX,
                 input.mouseY
             );
 
-            if (mainMenu.hasConfirmedSelection(input, serverList))
+            if (
+                mainMenu.hasConfirmedSelection(
+                    input,
+                    serverList
+                )
+                )
             {
-                std::string url = mainMenu.selectedServerUrl(serverList);
+                std::string url =
+                    mainMenu.selectedServerUrl(serverList);
 
                 if (!url.empty())
                 {
@@ -423,20 +597,32 @@ int main()
                 }
             }
         }
+
         window.swap();
 
         frameLimiter.endFrame();
 
-        stats.endFrame(inputManager.mouseEventsThisFrame());
+        stats.endFrame(
+            inputManager.mouseEventsThisFrame()
+        );
 
         if (stats.hasNewStats())
         {
             std::ostringstream title;
-            title << " | FPS limit: " << frameLimiter.modeName();
 
-            if (frameLimiter.mode() != FrameLimitMode::Unlimited)
+            title
+                << " | FPS limit: "
+                << frameLimiter.modeName();
+
+            if (
+                frameLimiter.mode() !=
+                FrameLimitMode::Unlimited
+                )
             {
-                title << " (" << frameLimiter.targetFps() << ")";
+                title
+                    << " ("
+                    << frameLimiter.targetFps()
+                    << ")";
             }
 
             window.setTitle(title.str());

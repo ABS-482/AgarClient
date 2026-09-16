@@ -20,7 +20,8 @@ void GameUpdater::update(
     const std::vector<uint32_t>& ownedIds,
     float deltaTime,
     float screenW,
-    float screenH
+    float screenH,
+    bool menuOpen
 )
 {
     skinManager.processCompleted();
@@ -73,12 +74,12 @@ void GameUpdater::update(
         }
     }
 
-    if (input.mouseWheel != 0.0f)
+    if (!menuOpen && input.mouseWheel != 0.0f)
     {
         camera.zoomBy(input.mouseWheel);
     }
 
-    if (input.leftButtonJustPressed)
+    if (!menuOpen && input.leftButtonJustPressed)
     {
         float worldX;
         float worldY;
