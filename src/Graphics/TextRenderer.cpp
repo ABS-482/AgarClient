@@ -56,7 +56,7 @@ void TextRenderer::addText(
         return;
 
     float offsetX = screenCenterX - (width * fontScale) * 0.5f;
-    float offsetY = screenCenterY + (70.0f * fontScale) / 3.0f;
+    float offsetY = screenCenterY + (font.pixelHeight() * fontScale) / 3.0f;
 
     // Переносим локальные (baseline-относительные) квады в абсолютные
     // экранные координаты прямо сейчас, на CPU — раз навсегда для этой строки.
@@ -123,7 +123,7 @@ void TextRenderer::addTextLeftAligned(
         return;
 
     float offsetX = screenLeftX; // без вычитания половины ширины — левый край как есть
-    float offsetY = screenY + (70.0f * fontScale) / 3.0f;
+    float offsetY = screenY + (font.pixelHeight() * fontScale) / 3.0f;
 
     for (size_t i = 0; i < m_scratch.size(); i += 4)
     {

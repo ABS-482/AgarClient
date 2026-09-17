@@ -15,12 +15,22 @@ struct GlyphInfo
     float advance = 0.0f;
 };
 
+enum class FontScaleMode
+{
+    PixelHeight,
+    Em
+};
+
 class Font
 {
 public:
-    // borderPixels — ширина обводки в пикселях запекания (при pixelHeight),
-    // как borderWidth=1.0f в Java для BLOB-шрифта.
-    Font(const std::string& ttfPath, float pixelHeight, float borderPixels = 1.0f);
+    Font(
+        const std::string& ttfPath,
+        float pixelHeight,
+        float borderPixels = 1.0f,
+        FontScaleMode scaleMode = FontScaleMode::PixelHeight
+    );
+
     ~Font();
 
     Font(const Font&) = delete;
@@ -33,7 +43,10 @@ public:
         float x, float y,
         std::vector<float>& outVertices
     ) const;
+
     float measureWidth(const std::string& text) const;
+
+    float pixelHeight() const { return m_pixelHeight; }
 
 private:
     static constexpr int m_atlasWidth = 1024;
@@ -43,5 +56,9 @@ private:
     static constexpr int m_padding = 8;
 
     GLuint m_texture = 0;
+    float m_pixelHeight = 0.0f;
+
+    FontScaleMode m_scaleMode = FontScaleMode::PixelHeight;
+
     std::unordered_map<int, GlyphInfo> m_glyphs;
 };

@@ -116,12 +116,6 @@ int main()
         1.0f
     );
 
-    Font menuFont(
-        "C:/dev/AgarClient/assets/fonts/arial.otf",
-        85.0f,
-        0
-    );
-
     Font gmFont(
         "C:/dev/AgarClient/assets/fonts/movavi.otf",
         100.0f,
@@ -142,7 +136,7 @@ int main()
         textRenderer,
         iconRenderer,
         gmFont,
-        menuFont
+        font
     );
 
     // -------------------------
@@ -268,10 +262,78 @@ int main()
     bool running = true;
 
     bool menuOpen = false;
+    bool hadOwnedCells = false;
+    bool canRespawn = false;
 
     auto serverList = ServerListFetcher::fetch();
 
     AppState appState = AppState::SelectingServer;
+
+    // ------------------------------------------------------------
+    // Клик "Play" в меню — три случая, как в JS-версии (connn()):
+    //   1) сокета ещё нет                 -> открыть новый
+    //   2) уже подключены к этому серверу -> сокет не трогаем, просто спавн
+    //   3) подключены к другому серверу   -> закрыть старый, открыть новый
+    // ------------------------------------------------------------
+    auto connectToSelectedServer =
+        [&](const std::string& url)
+        {
+            if (url.empty())
+                return;
+
+            const ConnectionMode connectionMode =
+                mainMenu.state().joinMode ==
+                MenuState::JoinMode::Play
+                ? ConnectionMode::Play
+                : ConnectionMode::Spectate;
+
+            if (!network.isConnected())
+            {
+                // Случай 1: подключения ещё не было вовсе.
+                world.reset();
+
+                network.connect(
+                    url,
+                    "",
+                    connectionMode
+                );
+
+                appState = AppState::Playing;
+            }
+            else if (url == network.currentUrl())
+            {
+                // Случай 2: тот же сервер.
+                // Пока оставляем существующее соединение.
+                // Для Play выполняем spawn, для Spectate
+                // снова запрашиваем spectator.
+                if (connectionMode == ConnectionMode::Play)
+                {
+                    network.requestPlay();
+                }
+                else
+                {
+                    network.requestSpectate();
+                }
+
+                appState = AppState::Playing;
+            }
+            else
+            {
+                // Случай 3: переключение на другой сервер.
+                network.disconnect();
+                world.reset();
+
+                network.connect(
+                    url,
+                    "",
+                    connectionMode
+                );
+
+                appState = AppState::Playing;
+            }
+
+            menuOpen = false;
+        };
 
     while (running)
     {
@@ -362,11 +424,11 @@ int main()
 
                     if (
                         nowMacro -
-                        gameState.lastMacroShotTime >=
-                        std::chrono::milliseconds(40)
+                        gameState.lastFreshAimSendTime >=
+                        std::chrono::milliseconds(5)
                         )
                     {
-                        gameState.lastMacroShotTime =
+                        gameState.lastFreshAimSendTime =
                             nowMacro;
 
                         aimController.trySendFreshAim(
@@ -376,6 +438,16 @@ int main()
                             true
                         );
 
+                    }
+                    if (
+                        nowMacro -
+                        gameState.lastMacroShotTime >=
+                        std::chrono::milliseconds(200)
+                        )
+                    {
+                        gameState.lastMacroShotTime =
+                            nowMacro;
+                        network.requestEjectMass();
                         network.requestEjectMass();
                     }
                 }
@@ -399,6 +471,25 @@ int main()
                 screenH,
                 menuOpen
             );
+
+            const auto currentOwnedIds =
+                world.getOwnedIds();
+
+            const bool hasOwnedCells =
+                !currentOwnedIds.empty();
+
+            if (hadOwnedCells && !hasOwnedCells)
+            {
+                std::cout
+                    << "Player died. Switching to spectate.\n";
+
+                network.requestSpectate();
+
+                canRespawn = true;
+                menuOpen = false;
+            }
+
+            hadOwnedCells = hasOwnedCells;
 
             // --------------------------------------------------------
             // Рендер игры
@@ -450,16 +541,26 @@ int main()
                         screenH
                     );
 
-                    if (
-                        mainMenu.hasConfirmedSelection(
-                            input,
-                            serverList
-                        )
-                        )
+                    if (mainMenu.hasConfirmedSelection(input, serverList))
                     {
-                        // Play больше не подключается заново.
-                        // Мы уже находимся в Playing.
-                        menuOpen = false;
+                        if (
+                            canRespawn &&
+                            mainMenu.state().joinMode ==
+                            MenuState::JoinMode::Play
+                            )
+                        {
+                            // После смерти: только повторный spawn.
+                            network.requestSpawnFromSpectate();
+
+                            canRespawn = false;
+                            menuOpen = false;
+                        }
+                        else
+                        {
+                            connectToSelectedServer(
+                                mainMenu.selectedServerUrl(serverList)
+                            );
+                        }
                     }
                 }
 
@@ -579,22 +680,11 @@ int main()
                 input.mouseY
             );
 
-            if (
-                mainMenu.hasConfirmedSelection(
-                    input,
-                    serverList
-                )
-                )
+            if (mainMenu.hasConfirmedSelection(input, serverList))
             {
-                std::string url =
-                    mainMenu.selectedServerUrl(serverList);
-
-                if (!url.empty())
-                {
-                    world.reset();
-                    network.connect(url);
-                    appState = AppState::Playing;
-                }
+                connectToSelectedServer(
+                    mainMenu.selectedServerUrl(serverList)
+                );
             }
         }
 

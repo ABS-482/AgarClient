@@ -47,7 +47,7 @@ bool AimController::trySendFreshAim(
     if (
         !bypassRateLimit &&
         now - gameState.lastAimSendTime <
-        std::chrono::milliseconds(4)
+        std::chrono::milliseconds(1)
         )
     {
         return false;

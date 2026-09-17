@@ -15,4 +15,12 @@ struct MenuState
     std::string selectedMode;
 
     bool confirmedByClick = false;
+
+    enum class JoinMode
+    {
+        Play,
+        Spectate
+    };
+
+    JoinMode joinMode = JoinMode::Play;
 };

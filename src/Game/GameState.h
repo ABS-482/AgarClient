@@ -16,4 +16,5 @@ struct GameState
 
     std::chrono::steady_clock::time_point lastAimSendTime{};
     std::chrono::steady_clock::time_point lastMacroShotTime{};
+    std::chrono::steady_clock::time_point lastFreshAimSendTime{};
 };

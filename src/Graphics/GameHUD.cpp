@@ -44,8 +44,10 @@ void GameHUD::draw(
     if (!leaderboard.empty())
     {
         constexpr int maxVisible = 10;
-        constexpr float rowHeight = 28.0f;
-        constexpr float padding = 16.0f;
+
+        constexpr float rowHeight = 26.0f;
+        constexpr float paddingX = 14.0f;
+        constexpr float paddingY = 12.0f;
 
         const int visibleCount =
             std::min(
@@ -53,50 +55,72 @@ void GameHUD::draw(
                 maxVisible
             );
 
-        const float panelWidth = 240.0f;
+        const float panelWidth = 250.0f;
 
         const float panelHeight =
-            padding * 2.0f +
+            paddingY * 2.0f +
             rowHeight * visibleCount;
+
+        // --------------------------------------------------------
+        // Позиция
+        // --------------------------------------------------------
+
+        constexpr float marginRight = 10.0f;
+        constexpr float marginTop = 10.0f;
 
         const float panelCenterX =
             screenW -
-            panelWidth * 0.5f -
-            16.0f;
+            marginRight -
+            panelWidth * 0.5f;
 
         const float panelCenterY =
-            panelHeight * 0.5f +
-            16.0f;
+            marginTop +
+            panelHeight * 0.5f;
+
+        // --------------------------------------------------------
+        // Тёмная панель в стиле JS
+        // background: rgba(0, 0, 0, .30)
+        // border: 1px solid rgba(255, 255, 255, .12)
+        // --------------------------------------------------------
 
         uiPanel.draw(
             panelCenterX,
             panelCenterY,
             panelWidth,
             panelHeight,
-            0.0f,
-            rectR,
-            rectG,
-            rectB,
-            rectA,
+            12.0f,
+
+            // background
             0.0f,
             0.0f,
             0.0f,
-            0.0f,
-            0.0f,
+            0.30f,
+
+            // border
+            1.0f,
+            1.0f,
+            1.0f,
+            0.12f,
+
+            1.0f,
+
             screenW,
             screenH
         );
 
+        // --------------------------------------------------------
+        // Текст
+        // --------------------------------------------------------
+
         const float topY =
             panelCenterY -
             panelHeight * 0.5f +
-            padding;
+            paddingY;
 
         const float rowX =
-            screenW -
-            panelWidth -
-            16.0f +
-            padding;
+            panelCenterX -
+            panelWidth * 0.5f +
+            paddingX;
 
         for (int i = 0; i < visibleCount; ++i)
         {
@@ -118,7 +142,7 @@ void GameHUD::draw(
                 line,
                 rowX,
                 rowY,
-                0.28f
+                0.24f
             );
         }
     }
@@ -257,6 +281,10 @@ void GameHUD::draw(
         const std::string hudText =
             hudStream.str();
 
+        // --------------------------------------------------------
+        // Typography
+        // --------------------------------------------------------
+
         constexpr float hudFontScale =
             20.0f / 70.0f;
 
@@ -264,38 +292,59 @@ void GameHUD::draw(
             font.measureWidth(hudText) *
             hudFontScale;
 
-        const float panelWidth =
-            textWidthPx + 10.0f;
+        // Небольшие внутренние отступы по горизонтали.
+        constexpr float paddingX = 14.0f;
 
-        const float panelHeight =
-            34.0f;
+        // Высота как у компактного HUD из JS.
+        constexpr float panelHeight = 40.0f;
+
+        const float panelWidth =
+            textWidthPx +
+            paddingX * 2.0f;
+
+        // --------------------------------------------------------
+        // Position
+        // --------------------------------------------------------
+
+        constexpr float marginLeft = 10.0f;
+        constexpr float marginBottom = 10.0f;
 
         const float panelCenterX =
-            10.0f +
+            marginLeft +
             panelWidth * 0.5f;
 
         const float panelCenterY =
             screenH -
-            10.0f -
-            22.0f -
-            10.0f +
+            marginBottom -
             panelHeight * 0.5f;
+
+        // --------------------------------------------------------
+        // Dark strict panel
+        // background: rgba(0, 0, 0, .30)
+        // border:     rgba(255, 255, 255, .15)
+        // --------------------------------------------------------
 
         uiPanel.draw(
             panelCenterX,
             panelCenterY,
             panelWidth,
             panelHeight,
-            0.0f,
-            rectR,
-            rectG,
-            rectB,
-            rectA,
+            20.0f,
+
+            // background
             0.0f,
             0.0f,
             0.0f,
-            0.0f,
-            0.0f,
+            0.30f,
+
+            // border
+            1.0f,
+            1.0f,
+            1.0f,
+            0.15f,
+
+            1.0f,
+
             screenW,
             screenH
         );
@@ -303,7 +352,7 @@ void GameHUD::draw(
         textRenderer.addTextLeftAligned(
             font,
             hudText,
-            15.0f,
+            marginLeft + paddingX,
             panelCenterY,
             hudFontScale
         );

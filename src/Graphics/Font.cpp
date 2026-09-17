@@ -114,7 +114,14 @@ namespace
     }
 }
 
-Font::Font(const std::string& ttfPath, float pixelHeight, float borderPixels)
+Font::Font(
+    const std::string& ttfPath,
+    float pixelHeight,
+    float borderPixels,
+    FontScaleMode scaleMode
+)
+    : m_pixelHeight(pixelHeight),
+    m_scaleMode(scaleMode)
 {
     std::ifstream file(ttfPath, std::ios::binary | std::ios::ate);
 
@@ -143,7 +150,24 @@ Font::Font(const std::string& ttfPath, float pixelHeight, float borderPixels)
         return;
     }
 
-    float scale = stbtt_ScaleForPixelHeight(&fontInfo, pixelHeight);
+    float scale = 0.0f;
+
+    if (m_scaleMode == FontScaleMode::Em)
+    {
+        scale =
+            stbtt_ScaleForMappingEmToPixels(
+                &fontInfo,
+                pixelHeight
+            );
+    }
+    else
+    {
+        scale =
+            stbtt_ScaleForPixelHeight(
+                &fontInfo,
+                pixelHeight
+            );
+    }
     int radius = std::max(0, static_cast<int>(std::round(borderPixels)));
 
     // RG: R — заливка, G — заливка+обводка вместе (расширенная маска).

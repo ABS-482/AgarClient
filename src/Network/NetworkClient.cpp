@@ -82,11 +82,20 @@ NetworkClient::NetworkClient(PacketHandler& handler)
             {
             case ix::WebSocketMessageType::Open:
                 m_connected = true;
+
                 std::cout << "WebSocket connected.\n";
+
                 sendHandshake();
-                requestSpectate();
-                sendPlayerPassword();
-                sendPlayerColor();
+
+                if (m_connectionMode == ConnectionMode::Play)
+                {
+                    requestPlay();
+                }
+                else
+                {
+                    requestSpectate();
+                }
+
                 break;
 
             case ix::WebSocketMessageType::Close:
@@ -121,9 +130,18 @@ NetworkClient::~NetworkClient()
     disconnect();
 }
 
-void NetworkClient::connect(const std::string& url, const std::string& serverPass)
+void NetworkClient::connect(
+    const std::string& url,
+    const std::string& serverPass,
+    ConnectionMode mode
+)
 {
-    std::string fullUrl = url + "/connect?serverpass=" + serverPass;
+    m_currentUrl = url;
+    m_connectionMode = mode;
+
+    std::string fullUrl =
+        url + "/connect?serverpass=" + serverPass;
+
     m_webSocket.setUrl(fullUrl);
     m_webSocket.start();
 }
@@ -252,6 +270,24 @@ void NetworkClient::sendPacket(uint8_t opcode)
 void NetworkClient::requestSpectate()
 {
     sendPacket(1);
+
+    sendPlayerPassword();
+    sendDonate();
+    sendPlayerColor();
+
+    sendChat("***playerenter***");
+    sendChat("***playerenter***");
+}
+
+void NetworkClient::requestPlay()
+{
+    sendNick();
+    sendPlayerPassword();
+    sendDonate();
+    sendPlayerColor();
+
+    sendChat("***playerenter***");
+    sendChat("***playerenter***");
 }
 
 void NetworkClient::sendPlayerPassword()

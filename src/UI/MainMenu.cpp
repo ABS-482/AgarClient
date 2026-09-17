@@ -54,8 +54,8 @@ MainMenu::MenuLayout MainMenu::computeLayout(
     layout.modeIconGap = 6.0f;
 
     layout.serverListWidth = 400.0f;
-    layout.serverRowHeight = 22.0f;
-    layout.serverListGap = 2.0f;
+    layout.serverRowHeight = 34.0f;
+    layout.serverListGap = 4.0f;
     layout.serverVisibleRows = 20;
 
     layout.modesLeftX =
@@ -80,8 +80,8 @@ MainMenu::MenuLayout MainMenu::computeLayout(
     layout.serverButtonWidth = 350.0f;
     layout.serverButtonHeight = 82.0f;
 
-    layout.playButtonWidth = 225.0f;
-    layout.playButtonHeight = 55.0f;
+    layout.playButtonWidth = 113.0f;
+    layout.playButtonHeight = 40.0f;
 
     layout.spectateButtonWidth = layout.playButtonWidth;
     layout.spectateButtonHeight = layout.playButtonHeight;
@@ -495,6 +495,9 @@ void MainMenu::handleMouseClick(
 
             if (doubleClick || wasAlreadySelected)
             {
+                menuState.joinMode =
+                    MenuState::JoinMode::Play;
+
                 menuState.confirmedByClick = true;
             }
 
@@ -549,6 +552,9 @@ void MainMenu::handleMouseRelease(
         mouseY <= playBottom
         )
     {
+        menuState.joinMode =
+            MenuState::JoinMode::Play;
+
         menuState.confirmedByClick = true;
         return;
     }
@@ -587,7 +593,10 @@ void MainMenu::handleMouseRelease(
         mouseY <= spectateBottom
         )
     {
-        // Пока ничего не делаем.
+        menuState.joinMode =
+            MenuState::JoinMode::Spectate;
+
+        menuState.confirmedByClick = true;
         return;
     }
 }
@@ -910,13 +919,13 @@ void MainMenu::draw(
         layout.dialogY,
         layout.dialogWidth,
         layout.dialogHeight,
-        15.0f,
-        15.0f,
-        15.0f,
-        15.0f,
-        1.0f,
-        1.0f,
-        1.0f,
+        20.0f,
+        20.0f,
+        20.0f,
+        20.0f,
+        29.0f / 255.0f,
+        28.0f / 255.0f,
+        33.0f / 255.0f,
         1.0f,
         0.0f,
         0.0f,
@@ -940,80 +949,137 @@ void MainMenu::draw(
         const float y =
             layout.modesTopY +
             static_cast<float>(i) *
-            (layout.modeButtonHeight +
-                layout.modeButtonGap);
+            (
+                layout.modeButtonHeight +
+                layout.modeButtonGap
+                );
 
         const bool selected =
             static_cast<int>(i) ==
             menuState.selectedModeIndex;
 
-        const float left =
-            x - layout.modeButtonWidth * 0.5f;
+        // Левая и правая границы самой кнопки
+        const float buttonLeft =
+            x -
+            layout.modeButtonWidth * 0.5f;
 
-        const float right =
-            x + layout.modeButtonWidth * 0.5f;
+        const float buttonRight =
+            x +
+            layout.modeButtonWidth * 0.5f;
+
+        // Позиция иконки
+        const float iconCenterX =
+            buttonLeft -
+            layout.modeIconGap -
+            layout.modeIconSize * 0.5f;
+
+        // Границы всего элемента: иконка + кнопка
+        const float hoverPadding = 8.0f;
+
+        const float hoverLeft =
+            iconCenterX -
+            layout.modeIconSize * 0.5f -
+            hoverPadding;
+
+        const float hoverRight =
+            buttonRight;
 
         const float top =
-            y - layout.modeButtonHeight * 0.5f;
+            y -
+            layout.modeButtonHeight * 0.5f;
 
         const float bottom =
-            y + layout.modeButtonHeight * 0.5f;
+            y +
+            layout.modeButtonHeight * 0.5f;
 
         const bool hovered =
-            mouseX >= left &&
-            mouseX <= right &&
+            mouseX >= hoverLeft &&
+            mouseX <= hoverRight &&
             mouseY >= top &&
             mouseY <= bottom;
 
-        float fillR;
-        float fillG;
-        float fillB;
-
-        float borderR;
-        float borderG;
-        float borderB;
+        // --------------------------------------------------------
+        // Selected / Hover
+        // --------------------------------------------------------
 
         if (selected)
         {
-            fillR = 0.3608f;
-            fillG = 0.7216f;
-            fillB = 0.3608f;
+            const float selectedWidth =
+                hoverRight - hoverLeft;
 
-            borderR = 0.2980f;
-            borderG = 0.6824f;
-            borderB = 0.2980f;
+            const float selectedCenterX =
+                (hoverLeft + hoverRight) * 0.5f;
+
+            uiPanel.draw(
+                selectedCenterX,
+                y,
+                selectedWidth,
+                layout.modeButtonHeight,
+                18.0f,
+
+                // background — rgba(255,108,0,0.20)
+                1.0f,
+                108.0f / 255.0f,
+                0.0f,
+                0.20f,
+
+                // border — отсутствует
+                0.0f,
+                0.0f,
+                0.0f,
+                0.0f,
+
+                0.0f,
+
+                screenW,
+                screenH
+            );
         }
         else if (hovered)
         {
-            // #3071a9
-            fillR = 48.0f / 255.0f;
-            fillG = 113.0f / 255.0f;
-            fillB = 169.0f / 255.0f;
+            const float hoverWidth =
+                hoverRight - hoverLeft;
 
-            // #285e8e
-            borderR = 40.0f / 255.0f;
-            borderG = 94.0f / 255.0f;
-            borderB = 142.0f / 255.0f;
+            const float hoverCenterX =
+                (hoverLeft + hoverRight) * 0.5f;
+
+            uiPanel.draw(
+                hoverCenterX,
+                y,
+                hoverWidth,
+                layout.modeButtonHeight,
+                18.0f,
+
+                // background — прозрачный
+                0.0f,
+                0.0f,
+                0.0f,
+                0.0f,
+
+                // border — rgba(255,255,255,0.15)
+                1.0f,
+                1.0f,
+                1.0f,
+                0.15f,
+
+                // border thickness
+                1.0f,
+
+                screenW,
+                screenH
+            );
         }
-        else
-        {
-            fillR = 0.2588f;
-            fillG = 0.5451f;
-            fillB = 0.7922f;
 
-            borderR = 0.2078f;
-            borderG = 0.4941f;
-            borderB = 0.7412f;
-        }
+        // --------------------------------------------------------
+        // Название режима
+        // --------------------------------------------------------
 
-        iconRenderer.draw(
-            blueButtonTexture,
-            x,
+        textRenderer.addTextLeftAligned(
+            gmFont,
+            gameModes[i].name,
+            buttonLeft + 10.0f,
             y,
-            layout.modeButtonWidth,
-            layout.modeButtonHeight,
-            screenW,
-            screenH
+            0.16f
         );
     }
 
@@ -1081,7 +1147,7 @@ void MainMenu::draw(
     const float serverListTop =
         layout.serversY;
 
-    // Нижняя граница списка — до верхнего края Play
+    // Нижняя граница списка — с отступом 15 px от Play
     const float serverListBottom =
         playY -
         layout.playButtonHeight * 0.5f -
@@ -1090,6 +1156,36 @@ void MainMenu::draw(
     const float serverListHeight =
         serverListBottom -
         serverListTop;
+
+    // ------------------------------------------------------------
+    // Тёмная панель списка
+    // ------------------------------------------------------------
+
+    uiPanel.draw(
+        layout.serversX,
+        serverListTop +
+        serverListHeight * 0.5f,
+        layout.serverListWidth,
+        serverListHeight,
+        12.0f,
+
+        // background
+        0.0f,
+        0.0f,
+        0.0f,
+        0.0f,
+
+        // border
+        0.0f,
+        0.0f,
+        0.0f,
+        0.0f,
+
+        1.0f,
+
+        screenW,
+        screenH
+    );
 
     textRenderer.begin();
 
@@ -1102,7 +1198,7 @@ void MainMenu::draw(
             ),
         static_cast<GLint>(
             screenH -
-            (layout.serversY + serverListHeight)
+            (serverListTop + serverListHeight)
             ),
         static_cast<GLint>(
             layout.serverListWidth
@@ -1175,10 +1271,12 @@ void MainMenu::draw(
             layout.serverListWidth * 0.5f;
 
         const float top =
-            y - layout.serverRowHeight * 0.5f;
+            y -
+            layout.serverRowHeight * 0.5f;
 
         const float bottom =
-            y + layout.serverRowHeight * 0.5f;
+            y +
+            layout.serverRowHeight * 0.5f;
 
         const bool hovered =
             mouseX >= left &&
@@ -1186,50 +1284,67 @@ void MainMenu::draw(
             mouseY >= top &&
             mouseY <= bottom;
 
+        // --------------------------------------------------------
+        // Selected / Hover
+        // --------------------------------------------------------
+
         if (selected)
         {
-            // #4691CD
             uiPanel.draw(
                 layout.serversX,
                 y,
                 layout.serverListWidth - 6.0f,
-                layout.serverRowHeight - 2.0f,
-                3.0f,
-                70.0f / 255.0f,
-                145.0f / 255.0f,
-                205.0f / 255.0f,
-                1.0f,
+                layout.serverRowHeight,
+                18.0f,
+
+                38.0f / 255.0f,
+                111.0f / 255.0f,
+                255.0f / 255.0f,
+                0.75f,
+
                 0.0f,
                 0.0f,
                 0.0f,
                 0.0f,
+
                 0.0f,
+
                 screenW,
                 screenH
             );
         }
         else if (hovered)
         {
-            // #6FA9D1
             uiPanel.draw(
                 layout.serversX,
                 y,
                 layout.serverListWidth - 6.0f,
                 layout.serverRowHeight - 2.0f,
-                3.0f,
-                111.0f / 255.0f,
-                169.0f / 255.0f,
-                209.0f / 255.0f,
+                18.0f,
+
+                // background — прозрачный
+                0.0f,
+                0.0f,
+                0.0f,
+                0.0f,
+
+                // border — rgba(255,255,255,0.15)
                 1.0f,
-                0.0f,
-                0.0f,
-                0.0f,
-                0.0f,
-                0.0f,
+                1.0f,
+                1.0f,
+                0.15f,
+
+                // border thickness
+                1.0f,
+
                 screenW,
                 screenH
             );
         }
+
+        // --------------------------------------------------------
+        // Server text
+        // --------------------------------------------------------
 
         const std::string& line =
             server.displayText;
@@ -1247,48 +1362,141 @@ void MainMenu::draw(
         gmFont,
         screenW,
         screenH,
-        0.0f,
-        0.0f,
-        0.0f
+        198.0f / 255.0f,
+        198.0f / 255.0f,
+        198.0f / 255.0f
     );
 
     glDisable(GL_SCISSOR_TEST);
 
-    const float playX = layout.serversX;
-    const float spectateX = layout.serversX;
+    // ------------------------------------------------------------
+    // Play / Spectate
+    // ------------------------------------------------------------
 
-    iconRenderer.draw(
-        redButtonTexture,
+    const float playX =
+        layout.serversX;
+
+    const float spectateX =
+        layout.serversX;
+
+    // ------------------------------------------------------------
+    // Play
+    // ------------------------------------------------------------
+
+    const float playLeft =
+        playX -
+        layout.playButtonWidth * 0.5f;
+
+    const float playRight =
+        playX +
+        layout.playButtonWidth * 0.5f;
+
+    const float playTop =
+        playY -
+        layout.playButtonHeight * 0.5f;
+
+    const float playBottom =
+        playY +
+        layout.playButtonHeight * 0.5f;
+
+    const bool playHovered =
+        mouseX >= playLeft &&
+        mouseX <= playRight &&
+        mouseY >= playTop &&
+        mouseY <= playBottom;
+
+    uiPanel.draw(
         playX,
         playY,
         layout.playButtonWidth,
         layout.playButtonHeight,
+        20.0f,
+
+        // background
+        playHovered
+        ? 30.0f / 255.0f
+        : 38.0f / 255.0f,
+        playHovered
+        ? 88.0f / 255.0f
+        : 111.0f / 255.0f,
+        playHovered
+        ? 204.0f / 255.0f
+        : 255.0f / 255.0f,
+        1.0f,
+
+        // border — none
+        0.0f,
+        0.0f,
+        0.0f,
+        0.0f,
+
+        0.0f,
+
         screenW,
         screenH
     );
 
-    iconRenderer.draw(
-        yellowButtonTexture,
+    // ------------------------------------------------------------
+    // Spectate — пока оставляем старый вид
+    // ------------------------------------------------------------
+
+    uiPanel.draw(
         spectateX,
         spectateY,
         layout.spectateButtonWidth,
         layout.spectateButtonHeight,
+        25.0f,
+
+        // background — none
+        0.0f,
+        0.0f,
+        0.0f,
+        0.0f,
+
+        // border — #266fff
+        38.0f / 255.0f,
+        111.0f / 255.0f,
+        255.0f / 255.0f,
+        1.0f,
+
+        // border thickness
+        1.0f,
+
         screenW,
         screenH
     );
 
+    // ------------------------------------------------------------
+    // Текст Play
+    // ------------------------------------------------------------
+
     textRenderer.begin();
 
     textRenderer.addText(
-        gmFont,
+        menuFont,
         "Play",
         playX,
         playY,
         0.24f
     );
 
+    textRenderer.end(
+        menuFont,
+        screenW,
+        screenH,
+        1.0f,
+        1.0f,
+        1.0f
+    );
+
+    // ------------------------------------------------------------
+    // Текст Spectate
+    // ------------------------------------------------------------
+
+    textRenderer.begin();
+
     textRenderer.addText(
-        gmFont,
+        menuFont,
         "Spectate",
         spectateX,
         spectateY,
@@ -1296,12 +1504,12 @@ void MainMenu::draw(
     );
 
     textRenderer.end(
-        gmFont,
+        menuFont,
         screenW,
         screenH,
-        1.0f,
-        1.0f,
-        1.0f
+        38.0f / 255.0f,
+        111.0f / 255.0f,
+        255.0f / 255.0f
     );
 
     // ------------------------------------------------------------
@@ -1395,10 +1603,10 @@ void MainMenu::draw(
             kServerScrollbarWidth,
             scrollbarTrackHeight,
             kServerScrollbarTrackRadius,
-            230.0f / 255.0f,
-            230.0f / 255.0f,
-            230.0f / 255.0f,
-            1.0f,
+            0.0f,
+            0.0f,
+            0.0f,
+            0.05f,
             0.0f, 0.0f, 0.0f, 0.0f,
             0.0f,
             screenW,
@@ -1412,18 +1620,20 @@ void MainMenu::draw(
             kServerScrollbarWidth,
             scrollbarThumbHeight,
             kServerScrollbarThumbRadius,
-            scrollbarHovered
-            ? 120.0f / 255.0f
-            : 150.0f / 255.0f,
-            scrollbarHovered
-            ? 120.0f / 255.0f
-            : 150.0f / 255.0f,
-            scrollbarHovered
-            ? 120.0f / 255.0f
-            : 150.0f / 255.0f,
+
+            // thumb
             1.0f,
-            0.0f, 0.0f, 0.0f, 0.0f,
+            1.0f,
+            1.0f,
+            0.10f,
+
             0.0f,
+            0.0f,
+            0.0f,
+            0.0f,
+
+            0.0f,
+
             screenW,
             screenH
         );
@@ -1451,7 +1661,7 @@ void MainMenu::draw(
             gameModes[i].name,
             x,
             y,
-            0.18f
+            0.16f
         );
     }
 
@@ -1459,8 +1669,6 @@ void MainMenu::draw(
         gmFont,
         screenW,
         screenH,
-        1.0f,
-        1.0f,
-        1.0f
+        0.776f, 0.776f, 0.776f
     );
 }
