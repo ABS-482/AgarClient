@@ -40,6 +40,11 @@ public:
         return static_cast<int32_t>(readUint32LE());
     }
 
+    int32_t readInt32BE()
+    {
+        return static_cast<int32_t>(readUint32BE());
+    }
+
     uint8_t readUint8()
     {
         require(1);
@@ -57,6 +62,18 @@ public:
         return value;
     }
 
+    uint16_t readUint16BE()
+    {
+        require(2);
+
+        uint16_t value =
+            (static_cast<uint16_t>(m_data[m_offset]) << 8) |
+            static_cast<uint16_t>(m_data[m_offset + 1]);
+
+        m_offset += 2;
+        return value;
+    }
+
     uint32_t readUint32LE()
     {
         require(4);
@@ -65,6 +82,20 @@ public:
             (static_cast<uint32_t>(m_data[m_offset + 1]) << 8) |
             (static_cast<uint32_t>(m_data[m_offset + 2]) << 16) |
             (static_cast<uint32_t>(m_data[m_offset + 3]) << 24);
+        m_offset += 4;
+        return value;
+    }
+
+    uint32_t readUint32BE()
+    {
+        require(4);
+
+        uint32_t value =
+            (static_cast<uint32_t>(m_data[m_offset]) << 24) |
+            (static_cast<uint32_t>(m_data[m_offset + 1]) << 16) |
+            (static_cast<uint32_t>(m_data[m_offset + 2]) << 8) |
+            static_cast<uint32_t>(m_data[m_offset + 3]);
+
         m_offset += 4;
         return value;
     }

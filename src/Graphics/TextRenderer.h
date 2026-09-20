@@ -26,6 +26,17 @@ public:
         float fontScale
     );
 
+    void addTextColored(
+        const Font& font,
+        const std::string& text,
+        float screenCenterX,
+        float screenCenterY,
+        float fontScale,
+        float r,
+        float g,
+        float b
+    );
+
     // Один-единственный draw call на ВЕСЬ накопленный за кадр текст.
     void end(
         const Font& font,
@@ -41,6 +52,17 @@ public:
         float fontScale
     );
 
+    void addTextLeftAlignedColored(
+        const Font& font,
+        const std::string& text,
+        float screenLeftX,
+        float screenY,
+        float fontScale,
+        float r,
+        float g,
+        float b
+    );
+
 private:
     Shader& m_shader;
 
@@ -49,6 +71,9 @@ private:
     GLint m_uColor;
     GLint m_uBorderColor;
     GLint m_uAlphaMultiplier;
+    GLint m_uUseVertexColor;
+
+    bool m_hasVertexColors = false;
 
     unsigned int m_vao = 0;
     unsigned int m_vbo = 0;

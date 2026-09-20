@@ -35,6 +35,7 @@
 #include "Graphics/Shaders/CircleShader.h"
 #include "Graphics/Shaders/TextShader.h"
 #include "Graphics/Shaders/SkinShader.h"
+#include "Graphics/Shaders/ChatSkinShader.h"
 #include "Graphics/Shaders/CircleInstancedShader.h"
 
 // Input
@@ -94,6 +95,11 @@ int main()
     Shader skinShader(
         SkinShader::vertex,
         SkinShader::fragment
+    );
+
+    Shader chatSkinShader(
+        ChatSkinShader::vertex,
+        ChatSkinShader::fragment
     );
 
     Shader textShader(
@@ -237,7 +243,10 @@ int main()
         font,
         camera,
         world,
-        gameState
+        gameState,
+        chatSkinShader,
+        skinMesh,
+        skinManager
     );
 
     AimController aimController(
@@ -290,6 +299,7 @@ int main()
             if (!network.isConnected())
             {
                 // Случай 1: подключения ещё не было вовсе.
+                hadOwnedCells = false;
                 world.reset();
 
                 network.connect(
@@ -321,6 +331,7 @@ int main()
             {
                 // Случай 3: переключение на другой сервер.
                 network.disconnect();
+                hadOwnedCells = false;
                 world.reset();
 
                 network.connect(

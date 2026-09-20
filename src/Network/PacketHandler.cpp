@@ -153,18 +153,18 @@ void PacketHandler::handleChatMessage(PacketReader& reader, bool isPrivate)
 {
     ChatMessage msg;
 
-    msg.msgId = reader.readUint32LE();
-    msg.playerID = reader.readUint32LE();
+    msg.msgId = reader.readUint32BE();
+    msg.playerID = reader.readUint32BE();
     msg.pwd = reader.readUint8();
-    msg.donateID = reader.readInt32LE();
+    msg.donateID = reader.readInt32BE();
 
     msg.colorR = reader.readUint8();
     msg.colorG = reader.readUint8();
     msg.colorB = reader.readUint8();
 
-    msg.skin = reader.readUint32LE();
-    msg.userLevel = reader.readUint16LE();
-    msg.userLevelSeason = reader.readUint16LE();
+    msg.skin = reader.readUint32BE();
+    msg.userLevel = reader.readUint16BE();
+    msg.userLevelSeason = reader.readUint16BE();
 
     msg.toxicity = reader.readUint8();
     msg.profanity = reader.readUint8();

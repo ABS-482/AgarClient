@@ -286,6 +286,9 @@ void NetworkClient::requestPlay()
     sendDonate();
     sendPlayerColor();
 
+    m_lastChatTime = std::chrono::steady_clock::now()
+        - std::chrono::milliseconds(5001);
+
     sendChat("***playerenter***");
     sendChat("***playerenter***");
 }

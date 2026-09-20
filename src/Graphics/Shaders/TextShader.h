@@ -7,10 +7,12 @@ namespace TextShader
 
         layout (location = 0) in vec2 aPos; // уже в абсолютных экранных пикселях
         layout (location = 1) in vec2 aUV;
+        layout (location = 2) in vec3 aColor;
 
         uniform vec2 uScreenSize;
 
         out vec2 vUV;
+        out vec3 vColor;
 
         void main()
         {
@@ -21,6 +23,7 @@ namespace TextShader
 
             gl_Position = vec4(ndc, 0.0, 1.0);
             vUV = aUV;
+            vColor = aColor;
         }
     )";
 
@@ -28,11 +31,15 @@ namespace TextShader
         #version 330 core
 
         in vec2 vUV;
+        in vec3 vColor;
 
         uniform sampler2D uAtlas;
+
         uniform vec3 uColor;
         uniform vec3 uBorderColor;
         uniform float uAlphaMultiplier;
+
+        uniform int uUseVertexColor;
 
         out vec4 FragColor;
 
@@ -43,13 +50,30 @@ namespace TextShader
             float fill = rg.r;
             float shape = max(rg.g, rg.r);
 
-            vec3 color = mix(uBorderColor, uColor, fill);
-            float alpha = shape * uAlphaMultiplier;
+            vec3 baseColor =
+                uUseVertexColor != 0
+                ? vColor
+                : uColor;
+
+            vec3 color =
+                mix(
+                    uBorderColor,
+                    baseColor,
+                    fill
+                );
+
+            float alpha =
+                shape *
+                uAlphaMultiplier;
 
             if (alpha <= 0.0)
                 discard;
 
-            FragColor = vec4(color, alpha);
+            FragColor =
+                vec4(
+                    color,
+                    alpha
+                );
         }
     )";
 }
