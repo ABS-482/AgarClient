@@ -1,6 +1,7 @@
 #include "MainMenu.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 
 namespace
@@ -10,6 +11,52 @@ namespace
     constexpr float kServerScrollbarMargin = 6.0f;
     constexpr float kServerScrollbarTrackRadius = 3.0f;
     constexpr float kServerScrollbarThumbRadius = 3.0f;
+
+    // displayText запечён один раз при фетче списка (см. ServerListFetcher)
+    // и содержит "<online>/<connectlimit>" где-то внутри своего текста.
+    // RealtimeInfoClient обновляет server.online в реальном времени, но
+    // не трогает саму строку — поэтому здесь на лету подменяем только
+    // число online прямо перед известным "/connectlimit", не трогая
+    // остальное форматирование (имя, режим, карту и т.д.), которое
+    // мы не парсим и формат которого нам не известен.
+    std::string liveServerDisplayText(const ServerListEntry& server)
+    {
+        const std::string anchor =
+            "/" + std::to_string(server.connectlimit);
+
+        const size_t slashPos =
+            server.displayText.find(anchor);
+
+        if (slashPos == std::string::npos)
+            return server.displayText; // неожиданный формат — не трогаем
+
+        size_t numStart = slashPos;
+
+        while (
+            numStart > 0 &&
+            std::isdigit(
+                static_cast<unsigned char>(
+                    server.displayText[numStart - 1]
+                    )
+            )
+            )
+        {
+            --numStart;
+        }
+
+        if (numStart == slashPos)
+            return server.displayText; // перед "/" цифр не нашли
+
+        std::string result = server.displayText;
+
+        result.replace(
+            numStart,
+            slashPos - numStart,
+            std::to_string(server.online)
+        );
+
+        return result;
+    }
 }
 
 MainMenu::MainMenu(
@@ -1346,8 +1393,8 @@ void MainMenu::draw(
         // Server text
         // --------------------------------------------------------
 
-        const std::string& line =
-            server.displayText;
+        const std::string line =
+            liveServerDisplayText(server);
 
         textRenderer.addTextLeftAligned(
             gmFont,

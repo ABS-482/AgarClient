@@ -46,6 +46,7 @@
 #include "Network/NetworkClient.h"
 #include "Network/PacketHandler.h"
 #include "Network/ServerListFetcher.h"
+#include "Network/RealtimeInfoClient.h"
 
 // UI
 #include "UI/MenuState.h"
@@ -276,6 +277,13 @@ int main()
 
     auto serverList = ServerListFetcher::fetch();
 
+    // Realtime online серверов — обновляет тот же serverList по ссылке,
+    // второй список не создаётся. Подключаемся сразу и держим соединение
+    // всё время жизни приложения (переподключение — забота самого класса).
+    RealtimeInfoClient realtimeInfoClient;
+    realtimeInfoClient.setServerList(serverList);
+    realtimeInfoClient.connect();
+
     AppState appState = AppState::SelectingServer;
 
     // ------------------------------------------------------------
@@ -349,6 +357,8 @@ int main()
     while (running)
     {
         stats.beginFrame();
+
+        realtimeInfoClient.update();
 
         frameLimiter.beginFrame();
 
@@ -518,7 +528,8 @@ int main()
                 ownedIds,
                 renderStates,
                 screenW,
-                screenH
+                screenH,
+                stats.fps()
             );
 
             glBindTexture(GL_TEXTURE_2D, 0);

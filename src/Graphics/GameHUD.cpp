@@ -47,7 +47,8 @@ void GameHUD::draw(
     const std::vector<uint32_t>& ownedIds,
     const std::unordered_map<uint32_t, RenderState>& renderStates,
     float screenW,
-    float screenH
+    float screenH,
+    double fps
 )
 {
     constexpr float rectR = 0.1647f;
@@ -181,10 +182,10 @@ void GameHUD::draw(
         constexpr int maxVisibleLines = 7;
 
         // Расстояние между обычными визуальными строками.
-        constexpr float rowHeight = 36.0f;
+        constexpr float rowHeight = 22.0f;
 
         // Дополнительный отступ только между разными сообщениями.
-        constexpr float messageGap = 15.0f;
+        constexpr float messageGap = 26.0f;
 
         constexpr float padding = 12.0f;
         constexpr float fontScale = 0.24f;
@@ -535,10 +536,13 @@ void GameHUD::draw(
         // Высота панели включает дополнительные отступы
         // ------------------------------------------------------------
 
-        const float panelHeight =
-            padding * 2.0f +
+        constexpr float maxPanelContentHeight =
             rowHeight * maxVisibleLines +
             messageGap * (maxVisibleLines - 1);
+
+        const float panelHeight =
+            padding * 2.0f +
+            maxPanelContentHeight;
 
         const float panelCenterX =
             panelWidth * 0.5f +
@@ -939,6 +943,66 @@ void GameHUD::draw(
             panelCenterY,
             hudFontScale
         );
+    }
+
+    // -------------------------
+// FPS (правый нижний угол)
+// -------------------------
+
+{
+    std::ostringstream fpsStream;
+    fpsStream << "FPS: " << static_cast<int>(fps + 0.5);
+
+    const std::string fpsText = fpsStream.str();
+
+    constexpr float fpsFontScale = 20.0f / 70.0f;
+
+    const float textWidthPx =
+        font.measureWidth(fpsText) *
+        fpsFontScale;
+
+    const float panelWidth = textWidthPx + 10.0f;
+    const float panelHeight = 34.0f;
+
+    // Симметрично панели счёта слева, только у правого края.
+    const float panelCenterX =
+        screenW -
+        10.0f -
+        panelWidth * 0.5f;
+
+    const float panelCenterY =
+        screenH -
+        10.0f -
+        22.0f -
+        10.0f +
+        panelHeight * 0.5f;
+
+    uiPanel.draw(
+        panelCenterX,
+        panelCenterY,
+        panelWidth,
+        panelHeight,
+        0.0f,
+        rectR,
+        rectG,
+        rectB,
+        rectA,
+        0.0f,
+        0.0f,
+        0.0f,
+        0.0f,
+        0.0f,
+        screenW,
+        screenH
+    );
+
+    textRenderer.addTextLeftAligned(
+        font,
+        fpsText,
+        panelCenterX - panelWidth * 0.5f + 5.0f,
+        panelCenterY,
+        fpsFontScale
+    );
     }
 
     textRenderer.end(

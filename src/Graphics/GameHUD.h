@@ -35,7 +35,8 @@ public:
         const std::vector<uint32_t>& ownedIds,
         const std::unordered_map<uint32_t, RenderState>& renderStates,
         float screenW,
-        float screenH
+        float screenH,
+        double fps
     );
 
 private:

@@ -15,6 +15,8 @@ find_package(glad CONFIG REQUIRED)
 
 find_package(ixwebsocket CONFIG REQUIRED)
 
+find_package(nlohmann_json CONFIG REQUIRED)
+
 find_package(Stb REQUIRED)
 
 add_executable(AgarClient
@@ -43,6 +45,7 @@ add_executable(AgarClient
     src/Network/NetworkClient.cpp
     src/Network/PacketHandler.cpp
     src/Network/ServerListFetcher.cpp
+    src/Network/RealtimeInfoClient.cpp
     src/Game/World.cpp
     src/Game/ChatMessage.h
     src/Game/AimController.cpp
