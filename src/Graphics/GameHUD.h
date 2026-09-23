@@ -11,6 +11,9 @@
 #include "Shader.h"
 #include "SkinManager.h"
 #include "SkinMesh.h"
+#include "../UI/HUD/LeaderboardHUD.h"
+#include "../UI/HUD/PlayerHUD.h"
+#include "../UI/HUD/ChatHUD.h"
 
 #include "../Game/GameState.h"
 #include "../Game/RenderState.h"
@@ -46,14 +49,8 @@ private:
     Camera& camera;
     World& world;
     GameState& gameState;
-    Shader& chatSkinShader;
-    SkinMesh& skinMesh;
-    SkinManager& skinManager;
 
-    GLint chatSkinCenter = -1;
-    GLint chatSkinRadius = -1;
-    GLint chatSkinScreenSize = -1;
-    GLint chatSkinTexture = -1;
-    GLint chatSkinBorderWidth = -1;
-    GLint chatSkinBorderColor = -1;
+    LeaderboardHUD leaderboardHUD;
+    PlayerHUD playerHUD;
+    ChatHUD chatHUD;
 };

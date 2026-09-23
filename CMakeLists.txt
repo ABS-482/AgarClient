@@ -37,21 +37,27 @@ add_executable(AgarClient
     src/Graphics/IconRenderer.cpp
     src/Graphics/GameRenderer.cpp
     src/Graphics/GameHUD.cpp
+
     src/UI/ModeIconManager.cpp
     src/UI/MainMenu.cpp
+    src/UI/HUD/LeaderboardHUD.cpp
+
     src/Input/InputManager.cpp
+
     src/Core/FrameStats.cpp
     src/Core/FrameLimiter.cpp
+
     src/Network/NetworkClient.cpp
     src/Network/PacketHandler.cpp
     src/Network/ServerListFetcher.cpp
     src/Network/RealtimeInfoClient.cpp
+
     src/Game/World.cpp
     src/Game/ChatMessage.h
     src/Game/AimController.cpp
     src/Game/PlayerTracker.cpp
     src/Game/GameUpdater.cpp
-)
+ "src/UI/HUD/PlayerHUD.h" "src/UI/HUD/PlayerHUD.cpp" "src/UI/HUD/ChatHUD.h" "src/UI/HUD/ChatHUD.cpp")
 
 target_link_libraries(AgarClient PRIVATE
     SDL3::SDL3
