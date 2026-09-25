@@ -75,35 +75,35 @@ GameRenderer::GameRenderer(
 
     iScreenSize =
         circleInstancedShader.uniformLocation("uScreenSize");
+
+    uViewportSize =
+        glGetUniformLocation(
+            circleShader.id(),
+            "uViewportSize"
+        );
+
+    skinViewportSize =
+        glGetUniformLocation(
+            skinShader.id(),
+            "uViewportSize"
+        );
+
+    iViewportSize =
+        glGetUniformLocation(
+            circleInstancedShader.id(),
+            "uViewportSize"
+        );
 }
 
-void GameRenderer::draw(
+void GameRenderer::updateRenderStates(
     const WorldSnapshot& blobs,
-    const std::vector<uint32_t>& ownedIds,
-    std::unordered_map<uint32_t, RenderState>& renderStates,
-    float screenW,
-    float screenH
+    std::unordered_map<uint32_t, RenderState>& renderStates
 )
 {
-    glClearColor(
-        0.06f,
-        0.06f,
-        0.09f,
-        1.0f
-    );
-
-    glClear(GL_COLOR_BUFFER_BIT);
-
     constexpr float interpolationDuration = 0.12f;
 
     const auto now =
         std::chrono::steady_clock::now();
-
-    drawList.clear();
-    drawList.reserve(blobs->size());
-
-    foodInstanceData.clear();
-    foodInstanceData.reserve(blobs->size() * 6);
 
     for (const auto& [id, blob] : *blobs)
     {
@@ -169,6 +169,52 @@ void GameRenderer::draw(
         rs.size =
             rs.prevSize +
             (blob.targetSize - rs.prevSize) * t;
+    }
+
+    for (auto it = renderStates.begin();
+        it != renderStates.end(); )
+    {
+        if (blobs->find(it->first) == blobs->end())
+        {
+            it = renderStates.erase(it);
+        }
+        else
+        {
+            ++it;
+        }
+    }
+}
+
+void GameRenderer::draw(
+    const WorldSnapshot& blobs,
+    const std::vector<uint32_t>& ownedIds,
+    std::unordered_map<uint32_t, RenderState>& renderStates,
+    float screenW,
+    float screenH
+)
+{
+    glClearColor(
+        19.0f / 255.0f,
+        40.0f / 255.0f,
+        71.0f / 255.0f,
+        1.0f
+    );
+
+    glClear(GL_COLOR_BUFFER_BIT);
+
+    const float viewportPixelScale =
+        screenW / camera.viewportWidth;
+
+    drawList.clear();
+    drawList.reserve(blobs->size());
+
+    foodInstanceData.clear();
+    foodInstanceData.reserve(blobs->size() * 6);
+
+    for (const auto& [id, blob] : *blobs)
+    {
+        RenderState& rs =
+            renderStates[id];
 
         if (
             blob.cellType == CellType::Food ||
@@ -206,7 +252,6 @@ void GameRenderer::draw(
             return a.rs->size < b.rs->size;
         }
     );
-
     // Настройка circle shader
     circleShader.use();
 
@@ -226,6 +271,13 @@ void GameRenderer::draw(
         screenW,
         screenH
     );
+
+    circleShader.setVec2(
+        uViewportSize,
+        camera.viewportWidth,
+        camera.viewportHeight
+    );
+
 
     // Настройка skin shader
     skinShader.use();
@@ -247,6 +299,13 @@ void GameRenderer::draw(
         screenH
     );
 
+    skinShader.setVec2(
+        skinViewportSize,
+        camera.viewportWidth,
+        camera.viewportHeight
+    );
+
+
     // Настройка instanced food shader
     circleInstancedShader.use();
 
@@ -265,6 +324,12 @@ void GameRenderer::draw(
         iScreenSize,
         screenW,
         screenH
+    );
+
+    circleInstancedShader.setVec2(
+        iViewportSize,
+        camera.viewportWidth,
+        camera.viewportHeight
     );
 
     foodRenderer.draw(
@@ -400,18 +465,14 @@ void GameRenderer::draw(
 
             float nameSize =
                 std::max(
-                    std::floor(0.3f * rs.size),
-                    24.0f
-                );
-
-            if (blob.cellType == CellType::Virus)
-            {
-                nameSize *=
-                    virusFontMultiplier;
-            }
+                    rs.size * 0.2f,
+                    std::log2(
+                        1.0f + rs.size / 50.0f
+                    ) * 25.0f
+                ) * 1.2f;
 
             float fontScale =
-                (nameSize * camera.zoom) / 70.0f;
+                (nameSize * viewportPixelScale / camera.zoom) / 70.0f;
 
             textRenderer.addText(
                 font,
@@ -456,7 +517,7 @@ void GameRenderer::draw(
                     f10 * 0.8f;
 
                 massWorldY =
-                    rs.y +
+                    rs.y -
                     50.0f * rs.size / 100.0f;
             }
 
@@ -476,7 +537,7 @@ void GameRenderer::draw(
             );
 
             float massFontScale =
-                (massFontSize * camera.zoom) / 70.0f;
+                (massFontSize * viewportPixelScale / camera.zoom) / 70.0f;
 
             textRenderer.addText(
                 font,
@@ -496,17 +557,4 @@ void GameRenderer::draw(
         1.0f,
         1.0f
     );
-
-    for (auto it = renderStates.begin();
-        it != renderStates.end(); )
-    {
-        if (blobs->find(it->first) == blobs->end())
-        {
-            it = renderStates.erase(it);
-        }
-        else
-        {
-            ++it;
-        }
-    }
 }

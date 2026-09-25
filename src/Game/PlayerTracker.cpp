@@ -73,13 +73,19 @@ void PlayerTracker::update(
 
     if (totalSize > 0.0f)
     {
-        float sizeFactor =
-            std::pow(
-                std::min(64.0f / totalSize, 1.0f),
-                0.4f
-            );
+        float targetJavaZoom =
+            1.8f + totalSize * 0.005f;
 
-        camera.setSizeZoomFactor(sizeFactor);
+        if (targetJavaZoom > 7.0f)
+        {
+            targetJavaZoom -= 7.0f;
+            targetJavaZoom =
+                7.0f + targetJavaZoom * 0.2f;
+        }
+
+        camera.setTargetJavaZoom(
+            targetJavaZoom
+        );
     }
 
     if (count > 0)

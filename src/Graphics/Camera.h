@@ -11,20 +11,24 @@ public:
     float x = 0.0f;
     float y = 0.0f;
 
-    float zoom = 0.27f;
-    float targetZoom = 0.27f;
+    float zoom = 1.5f;
+    float targetZoom = 1.5f;
     float zoomScale = 1.0f;
     float sizeZoomFactor = 1.0f;
 
+    float cameraScale = 1.0f;
+    float targetJavaZoom = 1.5f;
     float targetX = 0.0f;
     float targetY = 0.0f;
 
     float minZoomScale = 0.2f;
     float maxZoomScale = 1.5f;
-    float baseZoom = 0.27f;
-    float minZoom = 0.05f;
-    float maxZoom = 0.4f;
+    float baseZoom = 1.5f;
+    float minZoom = 1.0f;
+    float maxZoom = 20.0f;
 
+    float viewportWidth = 608.0f;
+    float viewportHeight = 608.0f;
 
     bool hasBounds = false;
     float boundsMinX = 0.0f;
@@ -32,11 +36,15 @@ public:
     float boundsMaxX = 0.0f;
     float boundsMaxY = 0.0f;
 
+    void setViewport(float width, float height);
+
     void setBounds(float minX, float minY, float maxX, float maxY);
 
     void update(float deltaTime);
     void setManualTarget(float worldX, float worldY);
     void zoomBy(float wheelDelta);
+    void setTargetJavaZoom(float value);
+    void updateJavaZoom(float deltaTime);
 
     // Задаёт zoom мгновенно, минуя плавный lerp — удобно для стартовой
     // инициализации, когда доезжать до значения кадр за кадром не нужно.

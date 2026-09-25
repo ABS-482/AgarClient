@@ -375,6 +375,28 @@ int main()
         const float screenH =
             static_cast<float>(window.height());
 
+        const float gameScreenWidth = 608.0f;
+        const float gameScreenHeight = 608.0f;
+
+        const float scale =
+            (screenH / screenW >
+                gameScreenHeight / gameScreenWidth)
+            ? screenW / gameScreenWidth
+            : screenH / gameScreenHeight;
+
+        const float gameViewportW =
+            gameScreenWidth +
+            (screenW - gameScreenWidth * scale) / scale;
+
+        const float gameViewportH =
+            gameScreenHeight +
+            (screenH - gameScreenHeight * scale) / scale;
+
+        camera.setViewport(
+            gameViewportW,
+            gameViewportH
+        );
+
         if (appState == AppState::Playing)
         {
             // --------------------------------------------------------
@@ -385,6 +407,8 @@ int main()
             {
                 menuOpen = !menuOpen;
             }
+
+            network.update();
 
             auto blobs = world.snapshot();
             auto ownedIds = world.getOwnedIds();
@@ -477,6 +501,11 @@ int main()
             // --------------------------------------------------------
             // Обновление игры
             // --------------------------------------------------------
+
+            gameRenderer.updateRenderStates(
+                blobs,
+                renderStates
+            );
 
             playerTracker.update(
                 blobs,

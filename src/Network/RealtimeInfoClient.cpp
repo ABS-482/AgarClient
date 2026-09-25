@@ -29,11 +29,7 @@ RealtimeInfoClient::RealtimeInfoClient()
             switch (msg->type)
             {
             case ix::WebSocketMessageType::Open:
-                std::cout << "[RTS] Connected\n";
-                // Обязательно на КАЖДОЕ новое подключение, в т.ч. после
-                // автопереподключения — Open стреляет и тогда тоже.
                 m_webSocket.send("1");
-                std::cout << "[RTS] Sent: 1\n";
                 break;
 
             case ix::WebSocketMessageType::Close:
@@ -42,13 +38,11 @@ RealtimeInfoClient::RealtimeInfoClient()
                 break;
 
             case ix::WebSocketMessageType::Error:
-                std::cerr << "[RTS] error: " << msg->errorInfo.reason << '\n';
                 break;
 
             case ix::WebSocketMessageType::Message:
                 if (!msg->binary)
                 {
-                    std::cout << "[RTS] Message received\n";
                     handleMessage(msg->str);
                 }
                 break;
@@ -166,7 +160,6 @@ void RealtimeInfoClient::update()
 
     if (newTotal.has_value())
     {
-        std::cout << "[RTS] Total online: " << *newTotal << '\n';
         m_totalOnline = *newTotal;
     }
 
@@ -184,9 +177,6 @@ void RealtimeInfoClient::update()
 
         if (entry.online != online)
         {
-            std::cout << "[RTS] Server " << id << ": "
-                << entry.online << " -> " << online << '\n';
-
             entry.online = online;
         }
     }

@@ -6,6 +6,7 @@
     "glad",
     "ixwebsocket",
     "nlohmann-json",
-    "stb"
+    "stb",
+    "harfbuzz"
   ]
 }

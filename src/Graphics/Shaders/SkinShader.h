@@ -13,6 +13,7 @@ namespace SkinShader
         uniform vec2 uCameraPos;
         uniform float uZoom;
         uniform vec2 uScreenSize;
+        uniform vec2 uViewportSize;
 
         out vec2 vUV;
 
@@ -22,18 +23,20 @@ namespace SkinShader
                 uCenter +
                 aPos * uRadius;
 
-            vec2 screenPos =
-                (worldPos - uCameraPos) * uZoom +
-                uScreenSize * 0.5;
-
             vec2 ndc = vec2(
-                (screenPos.x / uScreenSize.x) * 2.0 - 1.0,
-                1.0 - (screenPos.y / uScreenSize.y) * 2.0
+                ((worldPos.x - uCameraPos.x) /
+                    (uViewportSize.x * 0.5)) / uZoom,
+
+                ((worldPos.y - uCameraPos.y) /
+                    (uViewportSize.y * 0.5)) / uZoom
             );
 
             gl_Position = vec4(ndc, 0.0, 1.0);
 
-            vUV = aUV;
+            vUV = vec2(
+                aUV.x,
+                1.0 - aUV.y
+            );
         }
     )";
 

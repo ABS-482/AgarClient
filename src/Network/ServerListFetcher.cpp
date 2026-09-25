@@ -273,9 +273,5 @@ std::vector<ServerListEntry> ServerListFetcher::fetch()
         return {};
     }
 
-    std::cout << "\n===== RAW SERVER RESPONSE =====\n";
-    std::cout << text << '\n';
-    std::cout << "===== END RAW SERVER RESPONSE =====\n\n";
-
     return parse(text);
 }

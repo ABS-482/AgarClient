@@ -12,6 +12,7 @@ namespace CircleShader
         uniform vec2 uCameraPos;
         uniform float uZoom;
         uniform vec2 uScreenSize;
+        uniform vec2 uViewportSize;
 
         out vec2 vLocalPos;
 
@@ -23,8 +24,8 @@ namespace CircleShader
             vec2 rel = worldPos - uCameraPos;
 
             vec2 ndc = vec2(
-                (rel.x / (uScreenSize.x * 0.5)) * uZoom,
-                -(rel.y / (uScreenSize.y * 0.5)) * uZoom
+                (rel.x / (uViewportSize.x * 0.5)) / uZoom,
+                (rel.y / (uViewportSize.y * 0.5)) / uZoom
             );
 
             gl_Position = vec4(ndc, 0.0, 1.0);

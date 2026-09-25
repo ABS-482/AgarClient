@@ -194,10 +194,13 @@ Font::Font(
     codepoints.push_back(0x0401); // Ё
     codepoints.push_back(0x0451); // ё
     codepoints.push_back(0x203A); // ›
-
+    codepoints.push_back(0x221E); // ∞
     for (uint32_t c : codepoints)
     {
-        int glyphIndex = stbtt_FindGlyphIndex(&fontInfo, static_cast<int>(c));
+        int glyphIndex = stbtt_FindGlyphIndex(
+            &fontInfo,
+            static_cast<int>(c)
+        );
 
         int advanceWidth = 0, leftBearing = 0;
         stbtt_GetGlyphHMetrics(&fontInfo, glyphIndex, &advanceWidth, &leftBearing);

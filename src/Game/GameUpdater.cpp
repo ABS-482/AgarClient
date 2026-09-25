@@ -26,8 +26,6 @@ void GameUpdater::update(
 {
     skinManager.processCompleted();
 
-    network.update();
-
     if (!gameState.mapCentered)
     {
         World::MapBounds bounds =
@@ -68,7 +66,7 @@ void GameUpdater::update(
             camera.x = middleX;
             camera.y = middleY;
 
-            camera.setZoomImmediate(0.0621f);
+            camera.setZoomImmediate(1.5f);
 
             gameState.mapCentered = true;
         }
@@ -108,9 +106,9 @@ void GameUpdater::update(
     {
         camera.setZoomLimits(
             0.2f,
-            6.0f,
-            0.05f,
-            2.0f
+            1.5f,
+            1.0f,
+            20.0f
         );
 
         camera.snapTowardsTarget(
@@ -118,7 +116,7 @@ void GameUpdater::update(
             0.01667f
         );
 
-        camera.updateZoomOnly(deltaTime);
+        camera.updateJavaZoom(deltaTime);
     }
     else
     {

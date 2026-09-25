@@ -68,8 +68,6 @@ void PacketHandler::handleMessage(const uint8_t* data, size_t size)
             break;
 
         default:
-            std::cerr << "Unknown opcode: "
-                << static_cast<int>(opcode) << '\n';
             break;
         }
     }

@@ -35,6 +35,11 @@ public:
         Camera& camera
     );
 
+    void updateRenderStates(
+        const WorldSnapshot& blobs,
+        std::unordered_map<uint32_t, RenderState>& renderStates
+    );
+
     void draw(
         const WorldSnapshot& blobs,
         const std::vector<uint32_t>& ownedIds,
@@ -75,6 +80,10 @@ private:
     GLint iCameraPos;
     GLint iZoom;
     GLint iScreenSize;
+
+    GLint uViewportSize;
+    GLint skinViewportSize;
+    GLint iViewportSize;
 
     std::vector<DrawEntry> drawList;
     std::vector<float> foodInstanceData;

@@ -454,9 +454,9 @@ void ChatHUD::draw(
             1.0f,
             1.0f,
             1.0f,
-            0.15f,
+            0.35f,
 
-            1.0f,
+            1.5f,
 
             screenW,
             screenH

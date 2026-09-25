@@ -145,13 +145,6 @@ GLuint SkinManager::loadLocalTexture(const char* path)
 
     stbi_image_free(pixels);
 
-    std::cout
-        << "Loaded local skin "
-        << path
-        << " (" << width
-        << "x" << height
-        << ")\n";
-
     return texture;
 }
 
@@ -219,9 +212,6 @@ void SkinManager::processCompleted()
             glBindTexture(GL_TEXTURE_2D, 0);
 
             m_textures.emplace(img.skinId, texture);
-
-            std::cout << "Loaded skin " << img.skinId
-                << " (" << img.width << "x" << img.height << ")\n";
         }
         else
         {

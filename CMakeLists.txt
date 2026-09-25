@@ -19,6 +19,8 @@ find_package(nlohmann_json CONFIG REQUIRED)
 
 find_package(Stb REQUIRED)
 
+find_package(harfbuzz CONFIG REQUIRED)
+
 add_executable(AgarClient
     src/main.cpp
     src/Graphics/Window.cpp

@@ -34,10 +34,57 @@ void Camera::update(float deltaTime)
     zoom = std::clamp(zoom, minZoom, maxZoom);
 }
 
+void Camera::setViewport(float width, float height)
+{
+    viewportWidth = width;
+    viewportHeight = height;
+}
+
 void Camera::zoomBy(float wheelDelta)
 {
-    zoomScale *= std::pow(1.15f, wheelDelta);
-    zoomScale = std::clamp(zoomScale, minZoomScale, maxZoomScale);
+    cameraScale *=
+        std::pow(1.15f, wheelDelta);
+
+    cameraScale =
+        std::clamp(
+            cameraScale,
+            0.2f,
+            1.5f
+        );
+}
+
+void Camera::setTargetJavaZoom(float value)
+{
+    targetJavaZoom =
+        std::clamp(
+            value,
+            1.0f,
+            20.0f
+        );
+}
+
+void Camera::updateJavaZoom(float deltaTime)
+{
+    float alpha =
+        std::clamp(
+            deltaTime * 8.0f,
+            0.0f,
+            1.0f
+        );
+
+    targetZoom =
+        cameraScale * targetJavaZoom;
+
+    zoom =
+        zoom * (1.0f - alpha) +
+        targetZoom * alpha;
+
+    zoom =
+        std::clamp(
+            zoom,
+            0.2f,
+            30.0f
+        );
 }
 
 void Camera::setManualTarget(float worldX, float worldY)
@@ -54,11 +101,16 @@ void Camera::setManualTarget(float worldX, float worldY)
 
 void Camera::setZoomImmediate(float desiredZoom)
 {
-    desiredZoom = std::clamp(desiredZoom, minZoom, maxZoom);
+    desiredZoom =
+        std::clamp(
+            desiredZoom,
+            minZoom,
+            maxZoom
+        );
 
-    zoomScale = std::clamp(desiredZoom / baseZoom, minZoomScale, maxZoomScale);
-    targetZoom = zoomScale * baseZoom;
-    zoom = targetZoom;
+    zoom = desiredZoom;
+    targetZoom = desiredZoom;
+    cameraScale = 1.0f;
 }
 
 void Camera::screenToWorld(
@@ -67,8 +119,23 @@ void Camera::screenToWorld(
     float& outWorldX, float& outWorldY
 ) const
 {
-    outWorldX = (screenX - screenWidth * 0.5f) / zoom + x;
-    outWorldY = (screenY - screenHeight * 0.5f) / zoom + y;
+    const float scaleX =
+        screenWidth / viewportWidth;
+
+    const float scaleY =
+        screenHeight / viewportHeight;
+
+    outWorldX =
+        x +
+        (screenX - screenWidth * 0.5f) *
+        zoom /
+        scaleX;
+
+    outWorldY =
+        y -
+        (screenY - screenHeight * 0.5f) *
+        zoom /
+        scaleY;
 }
 
 void Camera::worldToScreen(
@@ -77,18 +144,32 @@ void Camera::worldToScreen(
     float& outScreenX, float& outScreenY
 ) const
 {
-    outScreenX = (worldX - x) * zoom + screenWidth * 0.5f;
-    outScreenY = (worldY - y) * zoom + screenHeight * 0.5f;
+    const float scaleX =
+        screenWidth / viewportWidth;
+
+    const float scaleY =
+        screenHeight / viewportHeight;
+
+    outScreenX =
+        screenWidth * 0.5f +
+        (worldX - x) *
+        scaleX /
+        zoom;
+
+    outScreenY =
+        screenHeight * 0.5f -
+        (worldY - y) *
+        scaleY /
+        zoom;
 }
 
 void Camera::snapTowardsTarget(float deltaTime, float halfLifeSeconds)
 {
-    // halfLifeSeconds — время, за которое расстояние до цели
-    // сокращается вдвое, НЕЗАВИСИМО от FPS.
-    float smoothing = 1.0f - std::pow(0.5f, deltaTime / halfLifeSeconds);
+    float smoothing =
+        std::clamp(deltaTime * 30.0f, 0.0f, 1.0f);
 
-    x = x + (targetX - x) * smoothing;
-    y = y + (targetY - y) * smoothing;
+    x += (targetX - x) * smoothing;
+    y += (targetY - y) * smoothing;
 
     if (hasBounds)
     {
