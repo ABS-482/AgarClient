@@ -2,18 +2,19 @@
 
 namespace SkinShader
 {
-    inline constexpr const char* vertex = R"(
-        #version 330 core
+    inline constexpr const char* vertex = R"(#version 330 core
 
         layout (location = 0) in vec2 aPos;
         layout (location = 1) in vec2 aUV;
 
         uniform vec2 uCenter;
         uniform float uRadius;
-        uniform vec2 uCameraPos;
-        uniform float uZoom;
-        uniform vec2 uScreenSize;
-        uniform vec2 uViewportSize;
+
+        // JS camera
+        uniform vec2 uCameraPos;   // offsetX / offsetY
+        uniform float uZoom;       // camera.ratio
+        uniform vec2 uScreenSize;  // реальные размеры окна
+        uniform float uDepth;
 
         out vec2 vUV;
 
@@ -23,29 +24,31 @@ namespace SkinShader
                 uCenter +
                 aPos * uRadius;
 
+            vec2 rel =
+                worldPos -
+                uCameraPos;
+
+            vec2 screenPos =
+                uScreenSize * 0.5 +
+                rel * uZoom;
+
             vec2 ndc = vec2(
-                ((worldPos.x - uCameraPos.x) /
-                    (uViewportSize.x * 0.5)) / uZoom,
-
-                ((worldPos.y - uCameraPos.y) /
-                    (uViewportSize.y * 0.5)) / uZoom
+                (screenPos.x / uScreenSize.x) * 2.0 - 1.0,
+                1.0 - (screenPos.y / uScreenSize.y) * 2.0
             );
 
-            gl_Position = vec4(ndc, 0.0, 1.0);
+            gl_Position = vec4(ndc, uDepth, 1.0);
 
-            vUV = vec2(
-                aUV.x,
-                1.0 - aUV.y
-            );
+            vUV = aUV;
         }
     )";
 
-    inline constexpr const char* fragment = R"(
-        #version 330 core
+    inline constexpr const char* fragment = R"(#version 330 core
 
         in vec2 vUV;
 
         uniform sampler2D uSkin;
+        uniform vec3 uBaseColor;
 
         out vec4 FragColor;
 
@@ -61,7 +64,16 @@ namespace SkinShader
                 discard;
 
             vec4 texColor = texture(uSkin, vUV);
-            FragColor = vec4(texColor.rgb, texColor.a * alpha);
+
+            // Прозрачные участки скина заполняются цветом клетки.
+            vec3 color = mix(
+                uBaseColor,
+                texColor.rgb,
+                texColor.a
+            );
+
+            // Круглая маска по-прежнему отвечает за сглаженный внешний край.
+            FragColor = vec4(color, alpha);
         }
     )";
 }

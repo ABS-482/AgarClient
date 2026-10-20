@@ -22,8 +22,11 @@ public:
     void addText(
         const Font& font,
         const std::string& text,
-        float screenCenterX, float screenCenterY,
-        float fontScale
+        float screenCenterX,
+        float screenCenterY,
+        float fontScale,
+        float depth = 0.0f,
+        bool cacheLayout = true
     );
 
     void addTextColored(
@@ -34,7 +37,8 @@ public:
         float fontScale,
         float r,
         float g,
-        float b
+        float b,
+        float depth = 0.0f
     );
 
     // Один-единственный draw call на ВЕСЬ накопленный за кадр текст.
@@ -45,11 +49,19 @@ public:
         float r, float g, float b
     );
 
+    void flush(
+        const Font& font,
+        float screenWidth,
+        float screenHeight,
+        float r, float g, float b
+    );
+
     void addTextLeftAligned(
         const Font& font,
         const std::string& text,
         float screenLeftX, float screenY,
-        float fontScale
+        float fontScale,
+        float depth = 0.0f
     );
 
     void addTextLeftAlignedColored(
@@ -60,7 +72,8 @@ public:
         float fontScale,
         float r,
         float g,
-        float b
+        float b,
+        float depth = 0.0f
     );
 
 private:
@@ -78,6 +91,5 @@ private:
     unsigned int m_vao = 0;
     unsigned int m_vbo = 0;
 
-    std::vector<float> m_batch;   // общий буфер за весь кадр: x, y, u, v на вершину
-    std::vector<float> m_scratch; // временный буфер под один вызов buildQuads
+    std::vector<float> m_batch;   // общий буфер: x, y, u, v, r, g, b, depth на вершину
 };

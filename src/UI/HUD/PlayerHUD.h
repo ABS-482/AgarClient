@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <unordered_map>
 #include <vector>
+#include <string>
 
 #include "../../Game/RenderState.h"
 
@@ -26,7 +27,9 @@ public:
         const std::unordered_map<uint32_t, RenderState>& renderStates,
         float screenW,
         float screenH,
-        double fps
+        double fps,
+        int pingMs,
+        const std::string& serverInfoText
     );
 
 private:

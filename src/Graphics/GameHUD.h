@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <unordered_map>
 #include <vector>
+#include <string>
 
 #include "Camera.h"
 #include "Font.h"
@@ -18,6 +19,11 @@
 #include "../Game/GameState.h"
 #include "../Game/RenderState.h"
 #include "../Game/World.h"
+#include "../Fonts/UiFont.h"
+#include "../Fonts/UiTextRenderer.h"
+
+class UserSkinDatabase;
+class FrameProfiler;
 
 class GameHUD
 {
@@ -31,15 +37,21 @@ public:
         GameState& gameState,
         Shader& chatSkinShader,
         SkinMesh& skinMesh,
-        SkinManager& skinManager
+        SkinManager& skinManager,
+        UiFont& chatFont,
+        UiTextRenderer& chatTextRenderer,
+        UserSkinDatabase& userSkinDatabase
     );
 
     void draw(
+        FrameProfiler& profiler,
         const std::vector<uint32_t>& ownedIds,
         const std::unordered_map<uint32_t, RenderState>& renderStates,
         float screenW,
         float screenH,
-        double fps
+        double fps,
+        int pingMs,
+        const std::string& serverInfoText
     );
 
 private:
@@ -53,4 +65,6 @@ private:
     LeaderboardHUD leaderboardHUD;
     PlayerHUD playerHUD;
     ChatHUD chatHUD;
+    UiFont& chatFont;
+    UiTextRenderer& chatTextRenderer;
 };

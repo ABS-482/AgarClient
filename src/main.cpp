@@ -1,5 +1,3 @@
-#define NOMINMAX
-
 // SDL / OpenGL
 #include <glad/glad.h>
 #include <SDL3/SDL.h>
@@ -10,11 +8,15 @@
 #include <iostream>
 #include <sstream>
 #include <unordered_map>
+#include <exception>
+#include <filesystem>
+#include <string>
 
 // Core
 #include "Core/FrameStats.h"
 #include "Core/FrameLimiter.h"
 #include "Core/GameModes.h"
+#include "Core/AssetPath.h"
 
 // Graphics
 #include "Graphics/Shader.h"
@@ -47,6 +49,7 @@
 #include "Network/PacketHandler.h"
 #include "Network/ServerListFetcher.h"
 #include "Network/RealtimeInfoClient.h"
+#include "Network/UserSkinDatabase.h"
 
 // UI
 #include "UI/MenuState.h"
@@ -59,9 +62,19 @@
 #include "Game/AimController.h"
 #include "Game/PlayerTracker.h"
 #include "Game/GameUpdater.h"
+#include "Game/MacroController.h"
+#include "Game/ServerListEntry.h"
+
+#include "Fonts/UiFont.h"
+#include "Fonts/UiTextRenderer.h"
 
 // ixWebSocket
 #include <ixwebsocket/IXNetSystem.h>
+
+#include "VirusGuard/VirusGuard.h"
+
+#include "FrameProfiler.h"
+#include <iomanip>
 
 enum class AppState
 {
@@ -69,20 +82,88 @@ enum class AppState
     Playing
 };
 
-int main()
+const ServerListEntry* findConnectedServer(
+    const std::vector<ServerListEntry>& serverList,
+    const std::string& currentUrl
+)
 {
-    ix::initNetSystem();
+    if (currentUrl.empty())
+        return nullptr;
 
-    Window window("AgarClient", 1280, 720);
+    for (const auto& server : serverList)
+    {
+        const char* gateway = nullptr;
+
+        switch (server.dataLoc)
+        {
+        case 1:
+            gateway = "game900";
+            break;
+
+        case 2:
+            gateway = "game903";
+            break;
+
+        case 3:
+            gateway = "game906";
+            break;
+
+        default:
+            continue;
+        }
+
+        const std::string serverUrl =
+            std::string("ws://") +
+            gateway +
+            ".petridish.pw/" +
+            server.id;
+
+        if (serverUrl == currentUrl)
+            return &server;
+    }
+
+    return nullptr;
+}
+
+static void showFatalError(const std::string& message)
+{
+    std::cerr << "Fatal error: " << message << '\n';
+    SDL_ShowSimpleMessageBox(
+        SDL_MESSAGEBOX_ERROR,
+        "AgarClient",
+        message.c_str(),
+        nullptr
+    );
+}
+
+struct NetSystemGuard
+{
+    NetSystemGuard() { ix::initNetSystem(); }
+    ~NetSystemGuard() { ix::uninitNetSystem(); }
+};
+
+static int runGame()
+{
+    NetSystemGuard netGuard;
+
+    Window window("AgarClient", 1100, 620);
 
     if (!window.isValid())
     {
-        ix::uninitNetSystem();
         return 1;
     }
 
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+    if (!std::filesystem::exists(AssetPath::get("fonts/arial.otf")))
+    {
+        showFatalError(
+            "Assets folder not found.\nExpected: " +
+            (AssetPath::root() / "assets").string()
+        );
+        return 1;
+    }
 
     // -------------------------
     // Shaders
@@ -118,16 +199,33 @@ int main()
     // -------------------------
 
     Font font(
-        "C:/dev/AgarClient/assets/fonts/arial.otf",
+        AssetPath::get("fonts/arial.otf"),
         70.0f,
         1.0f
     );
 
     Font gmFont(
-        "C:/dev/AgarClient/assets/fonts/movavi.otf",
+        AssetPath::get("fonts/movavi.otf"),
         100.0f,
         0
     );
+
+    UiFont chatFont(
+        AssetPath::get("fonts/arial.otf"),
+        13.0f,
+        1.0f,
+        1.0f
+    );
+
+    // -------------------------
+    // Ресурсы предпросмотра скина
+    // -------------------------
+
+    World world;
+    SkinManager skinManager;
+    UserSkinDatabase userSkinDatabase;
+
+    SkinMesh skinMesh;
 
 
     // -------------------------
@@ -137,21 +235,47 @@ int main()
     UIPanel uiPanel;
     IconRenderer iconRenderer;
     TextRenderer textRenderer(textShader);
+    UiTextRenderer chatTextRenderer;
 
     MainMenu mainMenu(
         uiPanel,
         textRenderer,
         iconRenderer,
         gmFont,
-        font
+        font,
+        skinShader,
+        skinMesh,
+        skinManager,
+        userSkinDatabase
     );
+
+    bool nicknameTextInputStarted = false;
+
+    auto syncNicknameTextInput = [&]()
+        {
+            const bool shouldBeActive =
+                mainMenu.isTextInputActive();
+
+            if (shouldBeActive == nicknameTextInputStarted)
+                return;
+
+            if (shouldBeActive)
+            {
+                if (SDL_StartTextInput(window.handle()))
+                    nicknameTextInputStarted = true;
+            }
+            else
+            {
+                SDL_StopTextInput(window.handle());
+                nicknameTextInputStarted = false;
+            }
+        };
 
     // -------------------------
     // Game meshes / renderers
     // -------------------------
 
     CircleMesh circleMesh;
-    SkinMesh skinMesh;
     InstancedCircleRenderer foodRenderer;
 
     // -------------------------
@@ -159,14 +283,11 @@ int main()
     // -------------------------
 
     Camera camera;
-    FrameLimiter frameLimiter(window.refreshRate());
+    FrameLimiter frameLimiter;
 
     // -------------------------
     // Game
     // -------------------------
-
-    World world;
-    SkinManager skinManager;
 
     GameRenderer gameRenderer(
         circleShader,
@@ -181,6 +302,8 @@ int main()
         camera
     );
 
+    VirusGuard virusGuard(world);
+
     // -------------------------
     // Mode icons
     // -------------------------
@@ -193,24 +316,18 @@ int main()
     for (size_t i = 0; i < gameModes.size(); ++i)
     {
         gameModeIconTextures[i] = iconRenderer.loadTexture(
-            "C:/dev/AgarClient/" + gameModes[i].iconPath
+            AssetPath::fromRoot(gameModes[i].iconPath)
         );
     }
 
     GLuint blueButtonTexture =
-        iconRenderer.loadTexture(
-            "C:/dev/AgarClient/assets/icons/blueButton.png"
-        );
+        iconRenderer.loadTexture(AssetPath::get("icons/blueButton.png"));
 
     GLuint redButtonTexture =
-        iconRenderer.loadTexture(
-            "C:/dev/AgarClient/assets/icons/redButton.png"
-        );
+        iconRenderer.loadTexture(AssetPath::get("icons/redButton.png"));
 
     GLuint yellowButtonTexture =
-        iconRenderer.loadTexture(
-            "C:/dev/AgarClient/assets/icons/yellowButton.png"
-        );
+        iconRenderer.loadTexture(AssetPath::get("icons/yellowButton.png"));
     
     // -------------------------
     // Render state
@@ -230,13 +347,14 @@ int main()
 
     network.setPlayerPassword("");
     network.setNickname("Android Player");
-    network.setPlayerColor(6);
+    network.setPlayerColor(9);
     
 
     InputManager inputManager;
     InputState input;
     FrameStats stats;
     GameState gameState;
+    FrameProfiler profiler;
 
     GameHUD gameHud(
         uiPanel,
@@ -247,7 +365,10 @@ int main()
         gameState,
         chatSkinShader,
         skinMesh,
-        skinManager
+        skinManager,
+        chatFont,
+        chatTextRenderer,
+        userSkinDatabase
     );
 
     AimController aimController(
@@ -256,8 +377,9 @@ int main()
         gameState
     );
 
+    MacroController macroController(network);
+
     PlayerTracker playerTracker(
-        camera,
         gameState
     );
 
@@ -298,6 +420,24 @@ int main()
             if (url.empty())
                 return;
 
+            const std::string nickname = mainMenu.nickname();
+
+            const int selectedModeIndex =
+                mainMenu.state().selectedModeIndex;
+
+            const bool isClanhouseSelected =
+                selectedModeIndex >= 0 &&
+                selectedModeIndex < static_cast<int>(gameModes.size()) &&
+                gameModes[selectedModeIndex].id == "CLANHOUSE";
+
+            const std::string serverPass =
+                isClanhouseSelected
+                ? mainMenu.chPassword()
+                : "";
+
+            network.setNickname(nickname);
+            network.setPlayerPassword(mainMenu.playerPassword());
+
             const ConnectionMode connectionMode =
                 mainMenu.state().joinMode ==
                 MenuState::JoinMode::Play
@@ -306,16 +446,22 @@ int main()
 
             if (!network.isConnected())
             {
-                // Случай 1: подключения ещё не было вовсе.
                 hadOwnedCells = false;
+                gameState.mapCentered = false;
                 world.reset();
+                gameState.bestScoreSoFar = 0.0f;
+
+                // На случай, если предыдущее подключение
+                // завершилось ошибкой (например, HTTP 403).
+                network.disconnect();
 
                 network.connect(
                     url,
-                    "",
+                    serverPass,
                     connectionMode
                 );
 
+                canRespawn = false;
                 appState = AppState::Playing;
             }
             else if (url == network.currentUrl())
@@ -340,11 +486,13 @@ int main()
                 // Случай 3: переключение на другой сервер.
                 network.disconnect();
                 hadOwnedCells = false;
+                gameState.mapCentered = false;
                 world.reset();
+                gameState.bestScoreSoFar = 0.0f;
 
                 network.connect(
                     url,
-                    "",
+                    serverPass,
                     connectionMode
                 );
 
@@ -358,16 +506,31 @@ int main()
     {
         stats.beginFrame();
 
+        profiler.beginFrame();
+
         realtimeInfoClient.update();
 
-        frameLimiter.beginFrame();
-
-        if (input.cycleFpsLimitPressed)
-        {
-            frameLimiter.cycleMode();
-        }
+        input.textInputActive =
+            mainMenu.isTextInputActive();
 
         running = inputManager.poll(input);
+
+        // Обработка ввода Nick / Password
+        if (mainMenu.isTextInputActive())
+        {
+            if (input.textBackspacePressed)
+                mainMenu.backspaceTextInput();
+
+            if (!input.textInput.empty())
+                mainMenu.appendTextInput(input.textInput);
+
+            if (input.textEnterPressed || input.textEscapePressed)
+                mainMenu.finishTextInput();
+        }
+
+        window.updateSize();
+
+        skinManager.processCompleted();
 
         const float screenW =
             static_cast<float>(window.width());
@@ -375,27 +538,9 @@ int main()
         const float screenH =
             static_cast<float>(window.height());
 
-        const float gameScreenWidth = 608.0f;
-        const float gameScreenHeight = 608.0f;
+        camera.onResize(screenW, screenH);
 
-        const float scale =
-            (screenH / screenW >
-                gameScreenHeight / gameScreenWidth)
-            ? screenW / gameScreenWidth
-            : screenH / gameScreenHeight;
-
-        const float gameViewportW =
-            gameScreenWidth +
-            (screenW - gameScreenWidth * scale) / scale;
-
-        const float gameViewportH =
-            gameScreenHeight +
-            (screenH - gameScreenHeight * scale) / scale;
-
-        camera.setViewport(
-            gameViewportW,
-            gameViewportH
-        );
+        profiler.mark(FrameProfiler::Input);
 
         if (appState == AppState::Playing)
         {
@@ -409,6 +554,13 @@ int main()
             }
 
             network.update();
+            profiler.mark(FrameProfiler::Network);
+
+            if (network.consumeConnectionFailed())
+            {
+                std::cout << "Connection failed, reopening server menu.\n";
+                menuOpen = true;
+            }
 
             auto blobs = world.snapshot();
             auto ownedIds = world.getOwnedIds();
@@ -417,9 +569,32 @@ int main()
             // Игровой ввод
             // --------------------------------------------------------
 
+            if (input.fullscreenPressed)
+            {
+                window.toggleFullscreen();
+            }
+
             if (!menuOpen)
             {
-                if (!ownedIds.empty())
+                // E-макрос обрабатывается первым.
+                macroController.update(
+                    input,
+                    blobs,
+                    ownedIds,
+                    camera,
+                    screenW,
+                    screenH
+                );
+
+                macroController.setQHeld(
+                    input.ejectMassKeyHeld
+                );
+
+                // Обычный aim работает только когда E не зажат.
+                if (
+                    !ownedIds.empty() &&
+                    !input.action(GameAction::MacroE).held
+                    )
                 {
                     aimController.trySendFreshAim(
                         input,
@@ -428,39 +603,73 @@ int main()
                         false
                     );
                 }
-                
+
                 if (input.spawnRequestPressed)
                 {
                     network.requestSpawn();
                 }
 
-
+                // Split / одиночный Eject
                 if (
                     (input.splitRequested ||
                         input.ejectMassRequested) &&
                     !ownedIds.empty()
                     )
                 {
-                    aimController.trySendFreshAim(
-                        input,
-                        screenW,
-                        screenH,
-                        true
-                    );
+                    const bool macroHeld =
+                        input.action(GameAction::MacroE).held;
+
+                    if (!macroHeld)
+                    {
+                        aimController.trySendFreshAim(
+                            input,
+                            screenW,
+                            screenH,
+                            true
+                        );
+                    }
 
                     if (input.splitRequested)
                     {
-                        network.requestSplit();
+                        if (macroHeld)
+                        {
+                            macroController.requestManualSplit(
+                                input,
+                                camera,
+                                screenW,
+                                screenH
+                            );
+                        }
+                        else
+                        {
+                            network.requestSplit();
+                        }
                     }
 
                     if (input.ejectMassRequested)
                     {
-                        network.requestEjectMass();
+                        if (macroHeld)
+                        {
+                            macroController.requestManualEject(
+                                input,
+                                camera,
+                                screenW,
+                                screenH
+                            );
+                        }
+                        else
+                        {
+                            network.requestEjectMass();
+                            virusGuard.noteOwnEject();
+                        }
                     }
                 }
 
+                // Старый Q-макрос.
+                // Во время E-макроса не перебиваем его aim.
                 if (
                     input.ejectMassKeyHeld &&
+                    !input.action(GameAction::MacroE).held &&
                     !ownedIds.empty()
                     )
                 {
@@ -469,11 +678,11 @@ int main()
 
                     if (
                         nowMacro -
-                        gameState.lastFreshAimSendTime >=
-                        std::chrono::milliseconds(5)
+                        gameState.lastMacroShotTime >=
+                        std::chrono::milliseconds(200)
                         )
                     {
-                        gameState.lastFreshAimSendTime =
+                        gameState.lastMacroShotTime =
                             nowMacro;
 
                         aimController.trySendFreshAim(
@@ -483,17 +692,10 @@ int main()
                             true
                         );
 
-                    }
-                    if (
-                        nowMacro -
-                        gameState.lastMacroShotTime >=
-                        std::chrono::milliseconds(200)
-                        )
-                    {
-                        gameState.lastMacroShotTime =
-                            nowMacro;
                         network.requestEjectMass();
+                        virusGuard.noteOwnEject();
                         network.requestEjectMass();
+                        virusGuard.noteOwnEject();
                     }
                 }
             }
@@ -501,11 +703,13 @@ int main()
             // --------------------------------------------------------
             // Обновление игры
             // --------------------------------------------------------
-
+           
             gameRenderer.updateRenderStates(
                 blobs,
                 renderStates
             );
+
+            gameRenderer.updatePositions(renderStates);
 
             playerTracker.update(
                 blobs,
@@ -516,17 +720,17 @@ int main()
             gameUpdater.update(
                 input,
                 ownedIds,
+                renderStates,
                 static_cast<float>(stats.deltaTime()),
                 screenW,
                 screenH,
                 menuOpen
             );
 
-            const auto currentOwnedIds =
-                world.getOwnedIds();
-
             const bool hasOwnedCells =
-                !currentOwnedIds.empty();
+                !ownedIds.empty();
+
+            profiler.mark(FrameProfiler::Update);
 
             if (hadOwnedCells && !hasOwnedCells)
             {
@@ -545,21 +749,74 @@ int main()
             // Рендер игры
             // --------------------------------------------------------
 
-            gameRenderer.draw(
-                blobs,
-                ownedIds,
-                renderStates,
-                screenW,
-                screenH
+
+            float targetWorldX;
+            float targetWorldY;
+
+            camera.screenToWorld(
+                input.mouseX,
+                input.mouseY,
+                targetWorldX,
+                targetWorldY
             );
 
-            gameHud.draw(
-                ownedIds,
-                renderStates,
-                screenW,
-                screenH,
-                stats.fps()
-            );
+            {
+                FrameProfiler::ScopedTimer timer(
+                    profiler,
+                    FrameProfiler::GameRender
+                );
+
+                gameRenderer.draw(
+                    blobs,
+                    ownedIds,
+                    renderStates,
+                    screenW,
+                    screenH,
+                    targetWorldX,
+                    targetWorldY,
+                    profiler,
+                    &virusGuard,
+                    input.splitPreviewHeld
+                );
+            }
+
+            std::string serverInfoText;
+
+            if (const ServerListEntry* server =
+                findConnectedServer(serverList, network.currentUrl()))
+            {
+                std::ostringstream stream;
+
+                stream
+                    << server->mode
+                    << " #" << server->modenumber
+                    << ' ' << server->sname
+                    << " Map" << server->map
+                    << " Food" << server->food
+                    << " - " << server->online
+                    << '/' << server->connectlimit
+                    << " online";
+
+                serverInfoText = stream.str();
+            }
+
+            {
+                FrameProfiler::ScopedTimer timer(
+                    profiler,
+                    FrameProfiler::HUD
+                );
+
+                gameHud.draw(
+                    profiler,
+                    ownedIds,
+                    renderStates,
+                    screenW,
+                    screenH,
+                    stats.fps(),
+                    network.pingMs(),
+                    serverInfoText
+                );
+            }
 
             glBindTexture(GL_TEXTURE_2D, 0);
 
@@ -594,13 +851,22 @@ int main()
 
                     if (mainMenu.hasConfirmedSelection(input, serverList))
                     {
-                        if (
+                        const std::string selectedUrl =
+                            mainMenu.selectedServerUrl(serverList);
+
+                        network.setNickname(mainMenu.nickname());
+                        network.setPlayerPassword(mainMenu.playerPassword());
+
+                        const bool respawnOnCurrentServer =
                             canRespawn &&
                             mainMenu.state().joinMode ==
-                            MenuState::JoinMode::Play
-                            )
+                            MenuState::JoinMode::Play &&
+                            network.isConnected() &&
+                            selectedUrl == network.currentUrl();
+
+                        if (respawnOnCurrentServer)
                         {
-                            // После смерти: только повторный spawn.
+                            // После смерти повторно входим на тот же сервер.
                             network.requestSpawnFromSpectate();
 
                             canRespawn = false;
@@ -608,9 +874,9 @@ int main()
                         }
                         else
                         {
-                            connectToSelectedServer(
-                                mainMenu.selectedServerUrl(serverList)
-                            );
+                            // Новый сервер или новое подключение:
+                            // обычный сценарий подключения.
+                            connectToSelectedServer(selectedUrl);
                         }
                     }
                 }
@@ -653,6 +919,9 @@ int main()
                     input.mouseY
                 );
             }
+
+            profiler.mark(FrameProfiler::Draw);
+
         }
         else
         {
@@ -731,6 +1000,8 @@ int main()
                 input.mouseY
             );
 
+            profiler.mark(FrameProfiler::Draw);
+
             if (mainMenu.hasConfirmedSelection(input, serverList))
             {
                 connectToSelectedServer(
@@ -739,9 +1010,13 @@ int main()
             }
         }
 
+        syncNicknameTextInput();
         window.swap();
+        profiler.mark(FrameProfiler::Swap);
 
         frameLimiter.endFrame();
+        profiler.mark(FrameProfiler::Wait);
+        profiler.endFrame();
 
         stats.endFrame(
             inputManager.mouseEventsThisFrame()
@@ -749,28 +1024,72 @@ int main()
 
         if (stats.hasNewStats())
         {
-            std::ostringstream title;
+            std::ostringstream out;
+            out << std::fixed << std::setprecision(3);
 
-            title
-                << " | FPS limit: "
-                << frameLimiter.modeName();
+            const auto printStat =
+                [&](FrameProfiler::Stage stage)
+                {
+                    const auto s = profiler.stat(stage);
 
-            if (
-                frameLimiter.mode() !=
-                FrameLimitMode::Unlimited
-                )
-            {
-                title
-                    << " ("
-                    << frameLimiter.targetFps()
-                    << ")";
-            }
+                    out << FrameProfiler::stageName(stage)
+                        << ' '
+                        << s.p50 << '/'
+                        << s.p99 << '/'
+                        << s.max
+                        << " ms  ";
+                };
 
-            window.setTitle(title.str());
+            printStat(FrameProfiler::Input);
+            printStat(FrameProfiler::Network);
+            printStat(FrameProfiler::Update);
+            printStat(FrameProfiler::Draw);
+            printStat(FrameProfiler::Swap);
+            printStat(FrameProfiler::Wait);
+            printStat(FrameProfiler::FrameTotal);
+            printStat(FrameProfiler::GameRender);
+            printStat(FrameProfiler::GameRenderSplitSimulate);
+            printStat(FrameProfiler::GameRenderPrepare);
+            printStat(FrameProfiler::GameRenderSort);
+            printStat(FrameProfiler::GameRenderSkinLookup);
+            printStat(FrameProfiler::GameRenderShaderSetup);
+            printStat(FrameProfiler::GameRenderInstanced);
+            printStat(FrameProfiler::GameRenderEntities);
+            printStat(FrameProfiler::GameRenderSplitPreview);
+            printStat(FrameProfiler::GameRenderTextFlush);
+            printStat(FrameProfiler::GameRenderEntityOutlines);
+            printStat(FrameProfiler::GameRenderSkinDraw);
+            printStat(FrameProfiler::GameRenderTextBuild);
+            printStat(FrameProfiler::HUD);
+            printStat(FrameProfiler::Leaderboard);
+            printStat(FrameProfiler::Chat);
+            printStat(FrameProfiler::ChatPrepare);
+            printStat(FrameProfiler::ChatVisibility);
+            printStat(FrameProfiler::ChatRender);
+            printStat(FrameProfiler::ChatTextBuild);
+            printStat(FrameProfiler::ChatTextFlush);
+            printStat(FrameProfiler::ChatVerifiedMarks);
+            printStat(FrameProfiler::PlayerHUD);
+            printStat(FrameProfiler::TextEnd);
+
+            std::cout << out.str() << '\n';
         }
     }
 
-    ix::uninitNetSystem();
-
     return 0;
+}
+
+
+
+int main()
+{
+    try
+    {
+        return runGame();
+    }
+    catch (const std::exception& e)
+    {
+        showFatalError(e.what());
+        return 1;
+    }
 }

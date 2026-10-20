@@ -2,213 +2,116 @@
 
 #include <algorithm>
 #include <cmath>
-#include <limits>
 
-void Camera::setBounds(float minX, float minY, float maxX, float maxY)
+namespace
 {
-    boundsMinX = minX;
-    boundsMinY = minY;
-    boundsMaxX = maxX;
-    boundsMaxY = maxY;
-    hasBounds = true;
-}
+    constexpr float kMaxDt = 0.1f;   // после фриза не телепортируем камеру
 
-void Camera::update(float deltaTime)
-{
-    float smoothing = 1.0f - std::exp(-10.0f * deltaTime);
-
-    x += (targetX - x) * smoothing;
-    y += (targetY - y) * smoothing;
-
-    if (hasBounds)
+    // JS считает «x = (x*(1-f) + target*f)» за КАДР при ~60 FPS.
+    // Это даёт тот же результат на 60 FPS и такой же по времени на любом другом.
+    inline float frameAlpha(float perFrame, float dt)
     {
-        x = std::clamp(x, boundsMinX, boundsMaxX);
-        y = std::clamp(y, boundsMinY, boundsMaxY);
+        return 1.0f - std::pow(1.0f - perFrame, dt * 60.0f);
     }
-
-    targetZoom = zoomScale * baseZoom;
-
-    float zoomSmoothing = std::clamp(deltaTime * 8.0f, 0.0f, 1.0f);
-    zoom += (targetZoom - zoom) * zoomSmoothing;
-
-    zoom = std::clamp(zoom, minZoom, maxZoom);
 }
 
-void Camera::setViewport(float width, float height)
+void Camera::onResize(float newWidth, float newHeight)
 {
-    viewportWidth = width;
-    viewportHeight = height;
+    width = newWidth;
+    height = newHeight;
+}
+
+// Math.max(height / 1080, width / 1920) * zoom
+float Camera::unitRatio() const
+{
+    return std::max(height / 1080.0f, width / 1920.0f) * zoom;
+}
+
+void Camera::updateRatio(const std::vector<CameraCell>& cells, float dt)
+{
+    if (cells.empty())
+        return;
+
+    float size = 0.0f;
+    for (const auto& c : cells)
+        size += c.size;
+
+    size = std::pow(std::min(64.0f / size, 1.0f), 0.4f) * unitRatio();
+
+    // ratio = (9 * ratio + size) / 10;
+    ratio += (size - ratio) * frameAlpha(0.1f, dt);
+}
+
+void Camera::update(const std::vector<CameraCell>& cells, float dt)
+{
+    dt = std::clamp(dt, 0.0f, kMaxDt);
+
+    if (!cells.empty())
+    {
+        updateRatio(cells, dt);
+
+        float sx = 0.0f, sy = 0.0f;
+        for (const auto& c : cells)
+        {
+            sx += c.x / cells.size();
+            sy += c.y / cells.size();
+        }
+        middleX = sx;
+        middleY = sy;
+            
+
+        chunk = ratio;
+
+        // offsetX = (offsetX + middleX) / 2;
+        const float a = frameAlpha(0.5f, dt);
+        offsetX += (middleX - offsetX) * a;
+        offsetY += (middleY - offsetY) * a;
+    }
+    else
+    {
+        // offsetX = (29 * offsetX + middleX) / 30;
+        const float a = frameAlpha(1.0f / 30.0f, dt);
+        offsetX += (middleX - offsetX) * a;
+        offsetY += (middleY - offsetY) * a;
+
+        // ratio = (9 * ratio + chunk * unitRatio()) / 10;
+        ratio += (chunk * unitRatio() - ratio) * frameAlpha(0.1f, dt);
+    }
 }
 
 void Camera::zoomBy(float wheelDelta)
 {
-    cameraScale *=
-        std::pow(1.15f, wheelDelta);
+    zoom *= std::pow(0.9f, wheelDelta / -120.0f);
 
-    cameraScale =
-        std::clamp(
-            cameraScale,
-            0.2f,
-            1.5f
-        );
-}
-
-void Camera::setTargetJavaZoom(float value)
-{
-    targetJavaZoom =
-        std::clamp(
-            value,
-            1.0f,
-            20.0f
-        );
-}
-
-void Camera::updateJavaZoom(float deltaTime)
-{
-    float alpha =
-        std::clamp(
-            deltaTime * 8.0f,
-            0.0f,
-            1.0f
-        );
-
-    targetZoom =
-        cameraScale * targetJavaZoom;
-
-    zoom =
-        zoom * (1.0f - alpha) +
-        targetZoom * alpha;
-
-    zoom =
-        std::clamp(
-            zoom,
-            0.2f,
-            30.0f
-        );
-}
-
-void Camera::setManualTarget(float worldX, float worldY)
-{
-    if (hasBounds)
+    if (!isSpectating)
     {
-        worldX = std::clamp(worldX, boundsMinX, boundsMaxX);
-        worldY = std::clamp(worldY, boundsMinY, boundsMaxY);
+        clampZoomInGame();
     }
-
-    targetX = worldX;
-    targetY = worldY;
-}
-
-void Camera::setZoomImmediate(float desiredZoom)
-{
-    desiredZoom =
-        std::clamp(
-            desiredZoom,
-            minZoom,
-            maxZoom
-        );
-
-    zoom = desiredZoom;
-    targetZoom = desiredZoom;
-    cameraScale = 1.0f;
-}
-
-void Camera::screenToWorld(
-    float screenX, float screenY,
-    float screenWidth, float screenHeight,
-    float& outWorldX, float& outWorldY
-) const
-{
-    const float scaleX =
-        screenWidth / viewportWidth;
-
-    const float scaleY =
-        screenHeight / viewportHeight;
-
-    outWorldX =
-        x +
-        (screenX - screenWidth * 0.5f) *
-        zoom /
-        scaleX;
-
-    outWorldY =
-        y -
-        (screenY - screenHeight * 0.5f) *
-        zoom /
-        scaleY;
-}
-
-void Camera::worldToScreen(
-    float worldX, float worldY,
-    float screenWidth, float screenHeight,
-    float& outScreenX, float& outScreenY
-) const
-{
-    const float scaleX =
-        screenWidth / viewportWidth;
-
-    const float scaleY =
-        screenHeight / viewportHeight;
-
-    outScreenX =
-        screenWidth * 0.5f +
-        (worldX - x) *
-        scaleX /
-        zoom;
-
-    outScreenY =
-        screenHeight * 0.5f -
-        (worldY - y) *
-        scaleY /
-        zoom;
-}
-
-void Camera::snapTowardsTarget(float deltaTime, float halfLifeSeconds)
-{
-    float smoothing =
-        std::clamp(deltaTime * 30.0f, 0.0f, 1.0f);
-
-    x += (targetX - x) * smoothing;
-    y += (targetY - y) * smoothing;
-
-    if (hasBounds)
-    {
-        x = std::clamp(x, boundsMinX, boundsMaxX);
-        y = std::clamp(y, boundsMinY, boundsMaxY);
+    else {
+        if (zoom < 0.02f)          zoom = 0.02f;
+        if (zoom > 3.0f / ratio)   zoom = 3.0f / ratio;
     }
 }
 
-void Camera::updateZoomOnly(float deltaTime)
+void Camera::clampZoomInGame()
 {
-    float effectiveDivisor = baseZoom * std::max(sizeZoomFactor, 0.0001f);
+    const float floor = 0.6f;
 
-    float dynamicMinScale = std::max(minZoomScale, minZoom / effectiveDivisor);
-    float dynamicMaxScale = std::min(maxZoomScale, maxZoom / effectiveDivisor);
-
-    if (dynamicMinScale > dynamicMaxScale)
-    {
-        std::swap(dynamicMinScale, dynamicMaxScale);
-    }
-
-    zoomScale = std::clamp(zoomScale, dynamicMinScale, dynamicMaxScale);
-
-    targetZoom = zoomScale * baseZoom * sizeZoomFactor;
-
-    float zoomSmoothing = std::clamp(deltaTime * 8.0f, 0.0f, 1.0f);
-    zoom += (targetZoom - zoom) * zoomSmoothing;
-
-    zoom = std::clamp(zoom, minZoom, maxZoom);
+    if (floor > zoom)         zoom = floor;
+    if (zoom > 4.0f / ratio)  zoom = 4.0f / ratio;
 }
 
-void Camera::setZoomLimits(
-    float minScale, float maxScale,
-    float minAbsolute, float maxAbsolute
-)
+// Типичный agar-трансформ: translate(w/2, h/2) → scale(ratio) → translate(-offset)
+void Camera::screenToWorld(float screenX, float screenY,
+    float& outWorldX, float& outWorldY) const
 {
-    minZoomScale = minScale;
-    maxZoomScale = maxScale;
-    minZoom = minAbsolute;
-    maxZoom = maxAbsolute;
+    outWorldX = (screenX - width * 0.5f) / ratio + offsetX;
+    outWorldY = (screenY - height * 0.5f) / ratio + offsetY;
+}
 
-    zoomScale = std::clamp(zoomScale, minZoomScale, maxZoomScale);
+void Camera::worldToScreen(float worldX, float worldY,
+    float& outScreenX, float& outScreenY) const
+{
+    outScreenX = (worldX - offsetX) * ratio + width * 0.5f;
+    outScreenY = (worldY - offsetY) * ratio + height * 0.5f;
 }

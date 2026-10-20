@@ -1,34 +1,43 @@
 #pragma once
-
 #include <chrono>
-
-enum class FrameLimitMode
-{
-    Unlimited,
-    DoubleRefreshRate,
-    RefreshRate,
-    Custom
-};
 
 class FrameLimiter
 {
 public:
-    explicit FrameLimiter(int monitorRefreshRate);
+    FrameLimiter();
+    ~FrameLimiter();
 
-    void beginFrame();
+    FrameLimiter(const FrameLimiter&) = delete;
+    FrameLimiter& operator=(const FrameLimiter&) = delete;
+
+    void setTargetFps(int fps);                 // 0 = без лимита
+    int  targetFps() const { return m_fps; }
+
+    // Вызывать в самом конце кадра (после swap).
     void endFrame();
 
-    void cycleMode();
-    void setCustomFps(int fps);
-
-    FrameLimitMode mode() const { return m_mode; }
-    int targetFps() const; // 0 = без ограничения
-    const char* modeName() const;
+    // Диагностика (для оверлея / профайлера)
+    double lastWaitMs() const { return m_lastWaitMs; }
+    double spinMarginMs() const
+    {
+        return std::chrono::duration<double, std::milli>(m_margin).count();
+    }
 
 private:
-    int m_monitorRefreshRate;
-    FrameLimitMode m_mode;
-    int m_customFps = 360; // как у вас в Java-клиенте
+    using Clock = std::chrono::steady_clock;
+    using Ns = std::chrono::nanoseconds;
 
-    std::chrono::steady_clock::time_point m_frameStart;
+    void sleepUntil(Clock::time_point t);
+
+    void* m_timer = nullptr;      // HANDLE (high-res waitable timer)
+    void* m_mmcss = nullptr;      // HANDLE (MMCSS task)
+    bool  m_periodSet = false;    // timeBeginPeriod(1) вызван
+
+    int m_fps = 360;
+    Ns  m_frame{ 1'000'000'000 / 360 };
+    Ns  m_margin{ 1'000'000 };    // адаптивный запас на busy-wait, старт 1 мс
+
+    Clock::time_point m_next{};
+    bool   m_started = false;
+    double m_lastWaitMs = 0.0;
 };

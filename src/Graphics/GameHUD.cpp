@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <sstream>
 #include <string>
+#include "../FrameProfiler.h"
 
 GameHUD::GameHUD(
     UIPanel& uiPanel,
@@ -13,7 +14,10 @@ GameHUD::GameHUD(
     GameState& gameState,
     Shader& chatSkinShader,
     SkinMesh& skinMesh,
-    SkinManager& skinManager
+    SkinManager& skinManager,
+    UiFont& chatFont,
+    UiTextRenderer& chatTextRenderer,
+    UserSkinDatabase& userSkinDatabase
 )
     : uiPanel(uiPanel),
     textRenderer(textRenderer),
@@ -27,6 +31,12 @@ GameHUD::GameHUD(
         font,
         world
     ),
+    playerHUD(
+        uiPanel,
+        textRenderer,
+        font,
+        gameState
+    ),
     chatHUD(
         uiPanel,
         textRenderer,
@@ -34,52 +44,82 @@ GameHUD::GameHUD(
         world,
         chatSkinShader,
         skinMesh,
-        skinManager
+        skinManager,
+        chatFont,
+        chatTextRenderer,
+        userSkinDatabase
     ),
-    playerHUD(
-        uiPanel,
-        textRenderer,
-        font,
-        gameState
-    )
+    chatFont(chatFont),
+    chatTextRenderer(chatTextRenderer)
 {
 }
 
 void GameHUD::draw(
+    FrameProfiler& profiler,
     const std::vector<uint32_t>& ownedIds,
     const std::unordered_map<uint32_t, RenderState>& renderStates,
     float screenW,
     float screenH,
-    double fps
+    double fps,
+    int pingMs,
+    const std::string& serverInfoText
 )
 {
     textRenderer.begin();
 
-    leaderboardHUD.draw(
-        screenW,
-        screenH
-    );
+    {
+        FrameProfiler::ScopedTimer timer(
+            profiler,
+            FrameProfiler::Leaderboard
+        );
 
-    chatHUD.draw(
-        ownedIds,
-        screenW,
-        screenH
-    );
+        leaderboardHUD.draw(ownedIds, screenW, screenH);
+    }
 
-    playerHUD.draw(
-        ownedIds,
-        renderStates,
-        screenW,
-        screenH,
-        fps
-    );
+    {
+        FrameProfiler::ScopedTimer timer(
+            profiler,
+            FrameProfiler::Chat
+        );
 
-    textRenderer.end(
-        font,
-        screenW,
-        screenH,
-        1.0f,
-        1.0f,
-        1.0f
-    );
+        chatHUD.draw(
+            profiler,
+            ownedIds,
+            screenW,
+            screenH
+        );
+    }
+
+    {
+        FrameProfiler::ScopedTimer timer(
+            profiler,
+            FrameProfiler::PlayerHUD
+        );
+
+        playerHUD.draw(
+            ownedIds,
+            renderStates,
+            screenW,
+            screenH,
+            fps,
+            pingMs,
+            serverInfoText
+        );
+    }
+
+    {
+        FrameProfiler::ScopedTimer timer(
+            profiler,
+            FrameProfiler::TextEnd
+        );
+
+        textRenderer.end(
+            font,
+            screenW,
+            screenH,
+            1.0f,
+            1.0f,
+            1.0f
+        );
+    }
 }

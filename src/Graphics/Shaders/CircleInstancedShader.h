@@ -2,19 +2,19 @@
 
 namespace CircleInstancedShader
 {
-    inline constexpr const char* vertex = R"(
-        #version 330 core
+    inline constexpr const char* vertex = R"(#version 330 core
 
-        layout (location = 0) in vec2 aPos;      // единичный квад, на вершину
+        layout (location = 0) in vec2 aPos;
 
-        layout (location = 1) in vec2 aCenter;   // на инстанс
-        layout (location = 2) in float aRadius;  // на инстанс
-        layout (location = 3) in vec3 aColor;    // на инстанс
+        // Данные отдельного экземпляра:
+        layout (location = 1) in vec2 aCenter;
+        layout (location = 2) in float aRadius;
+        layout (location = 3) in vec3 aColor;
+        layout (location = 4) in float aDepth;
 
-        uniform vec2 uCameraPos;
-        uniform float uZoom;
-        uniform vec2 uScreenSize;
-        uniform vec2 uViewportSize;
+        uniform vec2 uCameraPos;   // offsetX / offsetY
+        uniform float uZoom;       // camera.ratio
+        uniform vec2 uScreenSize;  // размеры окна
 
         out vec2 vLocalPos;
         out vec3 vColor;
@@ -24,20 +24,29 @@ namespace CircleInstancedShader
             vLocalPos = aPos;
             vColor = aColor;
 
-            vec2 worldPos = aCenter + aPos * aRadius;
-            vec2 rel = worldPos - uCameraPos;
+            vec2 worldPos =
+                aCenter +
+                aPos * aRadius;
+
+            vec2 rel =
+                worldPos -
+                uCameraPos;
+
+            vec2 screenPos =
+                uScreenSize * 0.5 +
+                rel * uZoom;
 
             vec2 ndc = vec2(
-                (rel.x / (uViewportSize.x * 0.5)) / uZoom,
-                (rel.y / (uViewportSize.y * 0.5)) / uZoom
+                (screenPos.x / uScreenSize.x) * 2.0 - 1.0,
+                1.0 - (screenPos.y / uScreenSize.y) * 2.0
             );
 
-            gl_Position = vec4(ndc, 0.0, 1.0);
+            // У каждого экземпляра своя глубина.
+            gl_Position = vec4(ndc, aDepth, 1.0);
         }
     )";
 
-    inline constexpr const char* fragment = R"(
-        #version 330 core
+    inline constexpr const char* fragment = R"(#version 330 core
 
         in vec2 vLocalPos;
         in vec3 vColor;
@@ -48,7 +57,14 @@ namespace CircleInstancedShader
         {
             float dist = length(vLocalPos);
             float edge = fwidth(dist);
-            float alpha = 1.0 - smoothstep(1.0 - edge, 1.0 + edge, dist);
+
+            float alpha =
+                1.0 -
+                smoothstep(
+                    1.0 - edge,
+                    1.0 + edge,
+                    dist
+                );
 
             if (alpha <= 0.0)
                 discard;

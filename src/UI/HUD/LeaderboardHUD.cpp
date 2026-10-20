@@ -2,6 +2,10 @@
 
 #include <algorithm>
 #include <string>
+#include <cstdint>
+#include <vector>
+#include <utility>
+#include <unordered_set>
 
 #include "../../Graphics/UIPanel.h"
 #include "../../Graphics/TextRenderer.h"
@@ -21,17 +25,76 @@ LeaderboardHUD::LeaderboardHUD(
 {
 }
 
+const LeaderboardHUD::BadgeText& LeaderboardHUD::badgeText(uint16_t level)
+{
+    auto it = badgeCache.find(level);
+    if (it != badgeCache.end())
+        return it->second;
+
+    BadgeText b;
+    b.text = (level == 999)
+        ? std::string("\xE2\x88\x9E")
+        : std::to_string(level);
+    b.width = font.measureWidth(b.text);
+
+    return badgeCache.emplace(level, std::move(b)).first->second;
+}
+
 void LeaderboardHUD::draw(
+    const std::vector<uint32_t>& ownedIds,
     float screenW,
     float screenH
 )
 {
-    auto leaderboard = world.getLeaderboard();
+    const auto leaderboardSnapshot = world.getLeaderboardSnapshot();
+
+    if (!leaderboardSnapshot)
+        return;
+
+    const auto& leaderboard = *leaderboardSnapshot;
+
+    if (ownershipSnapshot != leaderboardSnapshot)
+    {
+        ownershipSnapshot = leaderboardSnapshot;
+
+        for (int i = 0; i < kMaxRows; ++i)
+        {
+            if (static_cast<std::size_t>(i) < leaderboard.size())
+            {
+                rankedText[i] =
+                    std::to_string(i + 1) + ". " + leaderboard[i].name;
+            }
+            else
+            {
+                rankedText[i].clear();
+            }
+        }
+
+        std::unordered_set<uint32_t> currentLeaderboardIds;
+        currentLeaderboardIds.reserve(leaderboard.size());
+
+        for (const auto& entry : leaderboard)
+            currentLeaderboardIds.insert(entry.id);
+
+        for (auto it = highlightedLeaderboardIds.begin();
+            it != highlightedLeaderboardIds.end();)
+        {
+            if (currentLeaderboardIds.find(*it) ==
+                currentLeaderboardIds.end())
+            {
+                it = highlightedLeaderboardIds.erase(it);
+            }
+            else
+            {
+                ++it;
+            }
+        }
+    }
 
     if (leaderboard.empty())
         return;
 
-    constexpr int maxVisible = 10;
+    constexpr int maxVisible = kMaxRows;
 
     constexpr float rowHeight = 26.0f;
     constexpr float paddingX = 10.0f;
@@ -124,15 +187,6 @@ void LeaderboardHUD::draw(
     constexpr float badgeGap = 1.0f;
     constexpr float rankGap = 1.0f;
 
-    auto formatLevel =
-        [](uint16_t level) -> std::string
-        {
-            if (level == 999)
-                return "\xE2\x88\x9E";
-
-            return std::to_string(level);
-        };
-
     // Аналог JS .chatuserlevel
     // padding: 2px
     // border-radius: 15px
@@ -151,12 +205,10 @@ void LeaderboardHUD::draw(
             if (level == 0)
                 return cursorX;
 
-            const std::string text =
-                formatLevel(level);
+            const BadgeText& badge = badgeText(level);
 
             const float textWidth =
-                font.measureWidth(text) *
-                badgeFontScale;
+                badge.width * badgeFontScale;
 
             const float paddedTextWidth =
                 textWidth + badgePaddingX * 2.0f;
@@ -194,7 +246,7 @@ void LeaderboardHUD::draw(
 
             textRenderer.addTextColored(
                 font,
-                text,
+                badge.text,
                 badgeCenterX,
                 rowY,
                 badgeFontScale,
@@ -210,6 +262,22 @@ void LeaderboardHUD::draw(
     {
         const auto& entry =
             leaderboard[i];
+
+        const bool currentlyOwned =
+            std::find(
+                ownedIds.begin(),
+                ownedIds.end(),
+                entry.id
+            ) != ownedIds.end();
+
+        if (currentlyOwned)
+        {
+            highlightedLeaderboardIds.insert(entry.id);
+        }
+
+        const bool isMe =
+            highlightedLeaderboardIds.find(entry.id) !=
+            highlightedLeaderboardIds.end();
 
         const float rowY =
             topY +
@@ -246,28 +314,19 @@ void LeaderboardHUD::draw(
         // Дополнительный отступ перед местом.
         cursorX += rankGap;
 
-        const std::string rankPrefix =
-            std::to_string(i + 1) +
-            ". ";
+        const float textR = 1.0f;
+        const float textG = 1.0f;
+        const float textB = isMe ? 0.0f : 1.0f;
 
-        textRenderer.addTextLeftAligned(
+        textRenderer.addTextLeftAlignedColored(
             font,
-            rankPrefix,
+            rankedText[i],
             cursorX,
             rowY,
-            nameFontScale
-        );
-
-        cursorX +=
-            font.measureWidth(rankPrefix) *
-            nameFontScale;
-
-        textRenderer.addTextLeftAligned(
-            font,
-            entry.name,
-            cursorX,
-            rowY,
-            nameFontScale
+            nameFontScale,
+            textR,
+            textG,
+            textB
         );
     }
 }

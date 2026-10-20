@@ -137,6 +137,7 @@ std::vector<ServerListEntry> ServerListFetcher::parse(const std::string& html)
             else if (key == "connectlimit") entry.connectlimit = toInt(value);
             else if (key == "top") entry.top = toInt(value);
             else if (key == "ai") entry.ai = toInt(value);
+            else if (key == "data-loc") entry.dataLoc = toInt(value);
         }
 
         if (!entry.id.empty() && entry.id != "none")

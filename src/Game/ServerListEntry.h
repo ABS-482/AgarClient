@@ -20,6 +20,7 @@ struct ServerListEntry
     int connectlimit = 0;
     int top = 0;
     int ai = 0;
+    int dataLoc = 0;
 
     std::string displayText; // текст внутри <option>...</option>
 };

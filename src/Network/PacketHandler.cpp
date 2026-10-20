@@ -2,7 +2,7 @@
 
 #include <algorithm>
 #include <array>
-
+#include <cmath>
 #include <iostream>
 
 #include "../Network/NetworkClient.h"
@@ -55,9 +55,28 @@ void PacketHandler::handleMessage(const uint8_t* data, size_t size)
             handleMapBounds(reader);
             break;
 
+        case 96:
+            handleGameMode(reader);
+            break;
+
         case 97:
             handleDelayedNickRequest(reader);
             break;
+
+        case 115:
+        {
+            if (reader.remaining() < 4)
+                throw std::out_of_range(
+                    "Ping response: expected 4 bytes for hash"
+                );
+
+            const uint32_t hash = reader.readUint32LE();
+
+            if (m_networkClient)
+                m_networkClient->handlePingResponse(hash);
+
+            break;
+        }
 
         case 199:
             handleChatMessage(reader, false);
@@ -110,6 +129,17 @@ void PacketHandler::handleMapBounds(PacketReader& reader)
     double maxY = reader.readFloat64LE();
 
     m_world.setMapBounds(minX, minY, maxX, maxY);
+}
+
+void PacketHandler::handleGameMode(PacketReader& reader)
+{
+    uint8_t gameMode =
+        reader.readUint8();
+
+    if (m_networkClient)
+    {
+        m_networkClient->setGameMode(gameMode);
+    }
 }
 
 void PacketHandler::handleSkinsViaPid(PacketReader& reader)
@@ -178,8 +208,8 @@ void PacketHandler::handleChatMessage(PacketReader& reader, bool isPrivate)
     {
         std::string code = rawMessage.substr(rawMessage.size() - 2, 2);
 
-        static const std::array<std::string, 5> knownLanguageCodes =
-        { "ru", "en", "fr", "nl", "cn" };
+        static const std::array<std::string, 7> knownLanguageCodes =
+        { "ru", "en", "fr", "nl", "cn", "ar", "gl" };
 
         if (std::find(knownLanguageCodes.begin(), knownLanguageCodes.end(), code)
             != knownLanguageCodes.end())
@@ -312,6 +342,10 @@ void PacketHandler::handleUsersList(PacketReader& reader)
 
 void PacketHandler::handleWorldUpdate(PacketReader& reader)
 {
+
+    const auto packetTimestamp =
+        std::chrono::steady_clock::now();
+
     // ------------------------------------------------------------
     // Поглощения (eaten)
     // ------------------------------------------------------------
@@ -355,7 +389,8 @@ void PacketHandler::handleWorldUpdate(PacketReader& reader)
             y,
             size,
             colorIndex,
-            cellType
+            cellType,
+            packetTimestamp
         );
     }
 
@@ -390,7 +425,8 @@ void PacketHandler::handleWorldUpdate(PacketReader& reader)
             colorIndex,
             flags,
             playerID,
-            name
+            name,
+            packetTimestamp
         );
     }
 
@@ -466,7 +502,8 @@ void PacketHandler::handleWorldUpdate(PacketReader& reader)
             size,
             flags,
             playerID,
-            name
+            name,
+            packetTimestamp
         );
     }
 

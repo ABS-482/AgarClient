@@ -2,6 +2,8 @@
 
 #include <algorithm>
 #include <string>
+#include <vector>
+#include <utility>
 
 #include "../../Graphics/UIPanel.h"
 #include "../../Graphics/TextRenderer.h"
@@ -10,6 +12,11 @@
 #include "../../Graphics/SkinMesh.h"
 #include "../../Graphics/SkinManager.h"
 #include "../../Game/World.h"
+#include "../../Network/UserSkinDatabase.h"
+#include "../../Fonts/UiFont.h"
+#include "../../Fonts/UiTextRenderer.h"
+#include <chrono>
+#include "../../FrameProfiler.h"
 
 ChatHUD::ChatHUD(
     UIPanel& uiPanel,
@@ -18,7 +25,10 @@ ChatHUD::ChatHUD(
     World& world,
     Shader& chatSkinShader,
     SkinMesh& skinMesh,
-    SkinManager& skinManager
+    SkinManager& skinManager,
+    UiFont& chatFont,
+    UiTextRenderer& chatTextRenderer,
+    UserSkinDatabase& userSkinDatabase
 )
     : uiPanel(uiPanel),
     textRenderer(textRenderer),
@@ -26,7 +36,10 @@ ChatHUD::ChatHUD(
     world(world),
     chatSkinShader(chatSkinShader),
     skinMesh(skinMesh),
-    skinManager(skinManager)
+    skinManager(skinManager),
+    chatFont(chatFont),
+    chatTextRenderer(chatTextRenderer),
+    userSkinDatabase(userSkinDatabase)
 {
     chatSkinCenter =
         chatSkinShader.uniformLocation("uCenter");
@@ -48,247 +61,230 @@ ChatHUD::ChatHUD(
 }
 
 void ChatHUD::draw(
+    FrameProfiler& profiler,
     const std::vector<uint32_t>& ownedIds,
     float screenW,
     float screenH
 )
 {
-    auto chatMessages =
-        world.getChatMessages();
+    using ChatProfileClock = std::chrono::steady_clock;
 
-    if (!chatMessages.empty())
-    {
-        constexpr int maxVisibleLines = 7;
+    auto profileStageStart = ChatProfileClock::now();
 
-        // Расстояние между обычными визуальными строками.
-        constexpr float rowHeight = 22.0f;
-
-        // Дополнительный отступ только между разными сообщениями.
-        constexpr float messageGap = 26.0f;
-
-        constexpr float padding = 12.0f;
-        constexpr float fontScale = 0.24f;
-
-        constexpr float avatarSize = 44.0f;
-        constexpr float avatarRadius = 22.0f;
-        constexpr float avatarBorderWidth = 2.0f;
-        constexpr float avatarGap = 10.0f;
-
-        const float panelWidth = 340.0f;
-
-        // ------------------------------------------------------------
-        // Область текста находится справа от аватара
-        // ------------------------------------------------------------
-
-        const float contentWidth =
-            panelWidth -
-            padding * 2.0f -
-            avatarSize -
-            avatarGap;
-
-        struct ChatVisualLine
+    const auto recordChatStage =
+        [&](FrameProfiler::Stage stage)
         {
-            const ChatMessage* message;
-            std::string text;
-            bool firstLine;
+            const auto now = ChatProfileClock::now();
+
+            profiler.record(
+                stage,
+                std::chrono::duration<double, std::milli>(
+                    now - profileStageStart
+                ).count()
+            );
+
+            profileStageStart = now;
         };
 
-        std::vector<ChatVisualLine> visualLines;
+    const World::ChatMessagesView chatView =
+        world.getChatMessagesView();
 
-        // ------------------------------------------------------------
-        // Разбиваем сообщения на визуальные строки
-        // ------------------------------------------------------------
+    const auto chatMessagesSnapshot = chatView.messages;
+    const auto& chatMessages = *chatMessagesSnapshot;
 
-        for (const auto& msg : chatMessages)
+    const bool messagesChanged =
+        !hasPreparedChatView ||
+        chatView.version != preparedChatVersion ||
+        chatView.resetVersion != preparedChatResetVersion;
+
+    const bool databaseLoaded =
+        userSkinDatabase.isLoaded();
+
+    if (chatMessages.empty())
+    {
+        if (messagesChanged)
         {
-            const std::string displayName =
-                msg.name == "Spectator"
-                ? msg.name + std::to_string(msg.playerID)
-                : msg.name;
+            visualMessages.clear();
 
-            const std::string suffix =
-                msg.isPlayerEnter
-                ? " enters the game"
-                : ": " + msg.message;
+            preparedMessagesSnapshot = chatMessagesSnapshot;
+            preparedChatVersion = chatView.version;
+            preparedChatResetVersion = chatView.resetVersion;
+            hasPreparedChatView = true;
+        }
 
-            const float nicknameWidth =
-                font.measureWidth(displayName) *
-                fontScale;
+        if (databaseLoaded)
+            verifiedMarksPrepared = true;
 
-            // На первой строке место занимает ник.
-            const float firstLineWidth =
-                std::max(
-                    1.0f,
-                    contentWidth - nicknameWidth
-                );
+        recordChatStage(FrameProfiler::ChatPrepare);
+        return;
+    }
 
-            // --------------------------------------------------------
-            // Получение одного UTF-8 символа
-            // --------------------------------------------------------
+    // ------------------------------------------------------------
+    // Размеры чата
+    // ------------------------------------------------------------
 
-            auto getNextUtf8Char =
-                [](const std::string& text, size_t& pos)
+    constexpr float lineHeight = 14.0f;
+
+    constexpr float panelWidth = 300.0f;
+    constexpr float panelPadding = 12.0f;
+    constexpr float contentHeight = 305.0f;
+
+    constexpr float avatarSize = 44.0f;
+    constexpr float avatarRadius = 22.0f;
+    constexpr float avatarBorderWidth = 2.0f;
+    constexpr float avatarBoxWidth = 50.0f;
+    constexpr float avatarGap = 10.0f;
+
+    constexpr float enterAvatarSize = 44.0f;
+    constexpr float enterAvatarGap = 10.0f;
+
+    constexpr float bubbleWidth = 210.0f;
+    constexpr float bubbleRadius = 10.0f;
+
+    constexpr float bubblePaddingTop = 5.0f;
+    constexpr float bubblePaddingBottom = 8.0f;
+    constexpr float bubblePaddingLeft = 9.0f;
+    constexpr float bubblePaddingRight = 5.0f;
+    constexpr float nicknameGap = 5.0f;
+
+    constexpr float enterPaddingX = 12.0f;
+    constexpr float enterPaddingBottom = 4.0f;
+    constexpr float enterIconWidth = 14.0f;
+    constexpr float enterIconGap = 6.0f;
+    constexpr float enterMarginTop = 12.0f;
+    constexpr float enterMarginBottom = 16.0f;
+
+    constexpr float messageMargin = 5.0f;
+    constexpr int maxLinesPerMessage = 18;
+
+    const float textWidth =
+        bubbleWidth -
+        bubblePaddingLeft -
+        bubblePaddingRight;
+
+    // ------------------------------------------------------------
+    // UTF-8: чтение одного символа
+    // ------------------------------------------------------------
+
+    const auto getNextUtf8Char =
+        [](const std::string& text, size_t& pos)
+        {
+            const size_t start = pos;
+
+            if (pos >= text.size())
+                return std::string();
+
+            ++pos;
+
+            while (
+                pos < text.size() &&
+                (
+                    static_cast<unsigned char>(text[pos]) & 0xC0
+                    ) == 0x80
+                )
+            {
+                ++pos;
+            }
+
+            return text.substr(start, pos - start);
+        };
+
+    // ------------------------------------------------------------
+    // Разбиение слишком длинного слова
+    // ------------------------------------------------------------
+
+    const auto splitLongWord =
+        [&](const std::string& word, float maxWidth)
+        {
+            std::vector<std::string> parts;
+            std::string current;
+
+            size_t pos = 0;
+
+            while (pos < word.size())
+            {
+                const std::string character =
+                    getNextUtf8Char(word, pos);
+
+                const std::string candidate =
+                    current + character;
+
+                const float width =
+                    chatFont.measureWidth(candidate);
+
+                if (!current.empty() && width > maxWidth)
                 {
-                    const size_t start = pos;
-
-                    if (pos >= text.size())
-                        return std::string();
-
-                    ++pos;
-
-                    while (
-                        pos < text.size() &&
-                        (
-                            static_cast<unsigned char>(
-                                text[pos]
-                                ) & 0xC0
-                            ) == 0x80
-                        )
-                    {
-                        ++pos;
-                    }
-
-                    return text.substr(
-                        start,
-                        pos - start
-                    );
-                };
-
-            // --------------------------------------------------------
-            // Разрезаем очень длинное слово
-            // --------------------------------------------------------
-
-            auto splitLongWord =
-                [&](const std::string& word, float maxWidth)
+                    parts.push_back(current);
+                    current = character;
+                }
+                else
                 {
-                    std::vector<std::string> parts;
+                    current = candidate;
+                }
+            }
 
-                    std::string current;
+            if (!current.empty())
+                parts.push_back(current);
 
-                    size_t pos = 0;
+            return parts;
+        };
 
-                    while (pos < word.size())
-                    {
-                        const std::string character =
-                            getNextUtf8Char(
-                                word,
-                                pos
-                            );
+    // ------------------------------------------------------------
+    // Перенос обычного сообщения
+    // ------------------------------------------------------------
 
-                        const std::string candidate =
-                            current + character;
-
-                        const float width =
-                            font.measureWidth(candidate) *
-                            fontScale;
-
-                        if (
-                            !current.empty() &&
-                            width > maxWidth
-                            )
-                        {
-                            parts.push_back(current);
-                            current = character;
-                        }
-                        else
-                        {
-                            current = candidate;
-                        }
-                    }
-
-                    if (!current.empty())
-                        parts.push_back(current);
-
-                    return parts;
-                };
-
-            // --------------------------------------------------------
-            // Разбиваем suffix на слова
-            // --------------------------------------------------------
-
-            std::vector<std::string> words;
+    const auto wrapText =
+        [&](const std::string& source)
+        {
+            std::vector<std::string> lines;
+            std::string currentLine;
 
             size_t wordStart = 0;
 
-            while (wordStart < suffix.size())
+            while (wordStart < source.size())
             {
                 while (
-                    wordStart < suffix.size() &&
-                    suffix[wordStart] == ' '
+                    wordStart < source.size() &&
+                    source[wordStart] == ' '
                     )
                 {
                     ++wordStart;
                 }
 
-                if (wordStart >= suffix.size())
+                if (wordStart >= source.size())
                     break;
 
                 size_t wordEnd = wordStart;
 
                 while (
-                    wordEnd < suffix.size() &&
-                    suffix[wordEnd] != ' '
+                    wordEnd < source.size() &&
+                    source[wordEnd] != ' '
                     )
                 {
                     ++wordEnd;
                 }
 
-                words.push_back(
-                    suffix.substr(
+                const std::string word =
+                    source.substr(
                         wordStart,
                         wordEnd - wordStart
-                    )
-                );
+                    );
 
                 wordStart = wordEnd;
-            }
-
-            std::vector<std::string> lines;
-
-            std::string currentLine;
-
-            bool firstWord = true;
-
-            const bool suffixStartsWithSpace =
-                !suffix.empty() &&
-                suffix[0] == ' ';
-
-            // --------------------------------------------------------
-            // Формируем строки
-            // --------------------------------------------------------
-
-            for (const auto& word : words)
-            {
-                const float maxWidth =
-                    lines.empty()
-                    ? firstLineWidth
-                    : contentWidth;
-
-                const std::string prefix =
-                    firstWord &&
-                    suffixStartsWithSpace
-                    ? " "
-                    : "";
 
                 const std::string candidate =
                     currentLine.empty()
-                    ? prefix + word
+                    ? word
                     : currentLine + " " + word;
 
                 const float candidateWidth =
-                    font.measureWidth(candidate) *
-                    fontScale;
+                    chatFont.measureWidth(candidate);
 
-                if (candidateWidth <= maxWidth)
+                if (candidateWidth <= textWidth)
                 {
                     currentLine = candidate;
-                    firstWord = false;
                     continue;
                 }
-
-                // ----------------------------------------------------
-                // Текущая строка закончена
-                // ----------------------------------------------------
 
                 if (!currentLine.empty())
                 {
@@ -296,283 +292,856 @@ void ChatHUD::draw(
                     currentLine.clear();
                 }
 
-                firstWord = false;
-
-                // ----------------------------------------------------
-                // Слово помещается целиком в новую строку
-                // ----------------------------------------------------
-
-                const float wordWidth =
-                    font.measureWidth(word) *
-                    fontScale;
-
-                if (wordWidth <= contentWidth)
-                {
-                    currentLine = word;
-                    continue;
-                }
-
-                // ----------------------------------------------------
-                // Слово слишком длинное.
-                // Разрезаем его посимвольно.
-                // ----------------------------------------------------
-
                 const auto parts =
-                    splitLongWord(
-                        word,
-                        contentWidth
-                    );
+                    splitLongWord(word, textWidth);
 
-                for (
-                    size_t partIndex = 0;
-                    partIndex < parts.size();
-                    ++partIndex
-                    )
+                for (size_t i = 0; i < parts.size(); ++i)
                 {
-                    const std::string& part =
-                        parts[partIndex];
-
-                    if (
-                        partIndex + 1 <
-                        parts.size()
-                        )
+                    if (i + 1 < parts.size())
                     {
-                        lines.push_back(part);
+                        lines.push_back(parts[i]);
                     }
                     else
                     {
-                        currentLine = part;
+                        currentLine = parts[i];
                     }
                 }
             }
 
             if (!currentLine.empty())
-            {
                 lines.push_back(currentLine);
-            }
 
-            // --------------------------------------------------------
-            // Сохраняем визуальные строки
-            // --------------------------------------------------------
+            if (lines.empty())
+                lines.emplace_back();
 
-            for (
-                size_t lineIndex = 0;
-                lineIndex < lines.size();
-                ++lineIndex
-                )
+            // Не позволяем одному сообщению занять весь экран.
+            if (lines.size() > maxLinesPerMessage)
             {
-                visualLines.push_back({
-                    &msg,
-                    lines[lineIndex],
-                    lineIndex == 0
-                    });
+                lines.erase(
+                    lines.begin(),
+                    lines.end() - maxLinesPerMessage
+                );
             }
-        }
 
-        // ------------------------------------------------------------
-        // Показываем последние строки
-        // ------------------------------------------------------------
+            return lines;
+        };
 
-        const int visibleLineCount =
-            std::min(
-                static_cast<int>(
-                    visualLines.size()
-                    ),
-                maxVisibleLines
-            );
+    // ------------------------------------------------------------
+    // Инкрементальная подготовка сообщений чата
+    // ------------------------------------------------------------
 
-        const int startLine =
-            static_cast<int>(
-                visualLines.size()
-                ) -
-            visibleLineCount;
+    constexpr std::size_t maxChatMessages = 50;
 
-        // ------------------------------------------------------------
-        // Считаем количество дополнительных отступов
-        // между сообщениями среди видимых строк.
-        // ------------------------------------------------------------
+    const float enterAvailableWidth =
+        panelWidth -
+        panelPadding * 2.0f -
+        enterAvatarSize -
+        enterAvatarGap;
 
-        int messageGapCount = 0;
+    const float enterSuffixWidth =
+        chatFont.measureWidth(" enters the game");
 
-        for (int i = 1; i < visibleLineCount; ++i)
+    const auto updateEnterLayout =
+        [&](ChatVisualMessage& visual)
         {
-            const ChatVisualLine& previousLine =
-                visualLines[startLine + i - 1];
+            visual.enterTextOnSecondLine =
+                visual.enterNameLines.size() > 1 ||
+                visual.enterLastNameWidth +
+                enterSuffixWidth > enterAvailableWidth;
 
-            const ChatVisualLine& currentLine =
-                visualLines[startLine + i];
+            const std::size_t enterLineCount =
+                visual.enterNameLines.size() +
+                (visual.enterTextOnSecondLine ? 1u : 0u);
 
-            if (
-                currentLine.firstLine &&
-                currentLine.message != previousLine.message
-                )
-            {
-                ++messageGapCount;
-            }
-        }
+            visual.boxHeight =
+                lineHeight * static_cast<float>(enterLineCount) +
+                enterPaddingBottom;
+        };
 
-        // ------------------------------------------------------------
-        // Высота панели включает дополнительные отступы
-        // ------------------------------------------------------------
-
-        constexpr float maxPanelContentHeight =
-            rowHeight * maxVisibleLines +
-            messageGap * (maxVisibleLines - 1);
-
-        const float panelHeight =
-            padding * 2.0f +
-            maxPanelContentHeight;
-
-        const float panelCenterX =
-            panelWidth * 0.5f +
-            10.0f;
-
-        const float hudReservedHeight =
-            ownedIds.empty()
-            ? 16.0f
-            : 52.0f;
-
-        const float panelCenterY =
-            screenH -
-            hudReservedHeight -
-            panelHeight * 0.5f;
-
-        uiPanel.draw(
-            panelCenterX,
-            panelCenterY,
-            panelWidth,
-            panelHeight,
-            25.0f,
-
-            // background
-            0.0f,
-            0.0f,
-            0.0f,
-            0.30f,
-
-            // border
-            1.0f,
-            1.0f,
-            1.0f,
-            0.35f,
-
-            1.5f,
-
-            screenW,
-            screenH
-        );
-
-        // ------------------------------------------------------------
-        // Верхняя точка списка
-        // ------------------------------------------------------------
-
-        const float totalContentHeight =
-            rowHeight * visibleLineCount +
-            messageGap * messageGapCount;
-
-        const float topY =
-            panelCenterY +
-            panelHeight * 0.5f -
-            padding -
-            totalContentHeight;
-
-        // ------------------------------------------------------------
-        // Отрисовка
-        // ------------------------------------------------------------
-
-        for (
-            int i = 0;
-            i < visibleLineCount;
-            ++i
-            )
+    const auto makeVisualMessage =
+        [&](const ChatMessage& msg,
+            const ChatVisualMessage* previous)
         {
-            const ChatVisualLine& line =
-                visualLines[startLine + i];
+            ChatVisualMessage visual;
 
-            // --------------------------------------------------------
-            // Считаем дополнительные отступы перед текущей строкой.
-            // Они появляются только при переходе к новому сообщению.
-            // --------------------------------------------------------
+            visual.message = &msg;
 
-            float additionalGap = 0.0f;
+            visual.displayName =
+                msg.name == "Spectator"
+                ? msg.name + std::to_string(msg.playerID)
+                : msg.name;
 
-            for (int j = 1; j <= i; ++j)
+            visual.isEnter = msg.isPlayerEnter;
+
+            visual.isContinuation =
+                !visual.isEnter &&
+                previous != nullptr &&
+                !previous->isEnter &&
+                previous->message != nullptr &&
+                previous->message->playerID == msg.playerID;
+
+            visual.hasVerifiedMark =
+                databaseLoaded &&
+                !visual.isContinuation &&
+                userSkinDatabase.requiresPassword(msg.name);
+
+            if (!visual.isEnter && !visual.isContinuation)
             {
-                const ChatVisualLine& previousLine =
-                    visualLines[startLine + j - 1];
+                visual.displayNameWidth =
+                    chatFont.measureWidth(visual.displayName);
+            }
 
-                const ChatVisualLine& currentLine =
-                    visualLines[startLine + j];
+            if (visual.isEnter)
+            {
+                visual.enterNameLines = wrapText(visual.displayName);
 
-                if (
-                    currentLine.firstLine &&
-                    currentLine.message != previousLine.message
-                    )
+                visual.enterLastNameWidth =
+                    chatFont.measureWidth(
+                        visual.enterNameLines.back()
+                    );
+
+                updateEnterLayout(visual);
+
+                visual.topMargin = enterMarginTop;
+                visual.bottomMargin = enterMarginBottom;
+            }
+            else
+            {
+                visual.lines = wrapText(msg.message);
+
+                const float nicknameHeight =
+                    visual.isContinuation
+                    ? 0.0f
+                    : lineHeight + nicknameGap;
+
+                visual.boxHeight =
+                    bubblePaddingTop +
+                    nicknameHeight +
+                    lineHeight *
+                    static_cast<float>(visual.lines.size()) +
+                    bubblePaddingBottom;
+
+                visual.topMargin =
+                    visual.isContinuation ? 1.0f : messageMargin;
+
+                visual.bottomMargin =
+                    visual.isContinuation ? 2.0f : messageMargin;
+            }
+
+            return visual;
+        };
+
+    // ------------------------------------------------------------
+    // Определяем, можно ли продолжить существующую разметку
+    // ------------------------------------------------------------
+
+    bool fullRebuild =
+        !hasPreparedChatView ||
+        chatView.resetVersion != preparedChatResetVersion ||
+        !preparedMessagesSnapshot;
+
+    std::size_t addedCount = 0;
+
+    if (!fullRebuild &&
+        chatView.version != preparedChatVersion)
+    {
+        if (chatView.version < preparedChatVersion)
+        {
+            fullRebuild = true;
+        }
+        else
+        {
+            const std::uint64_t versionDelta =
+                chatView.version - preparedChatVersion;
+
+            if (versionDelta == 0 ||
+                versionDelta >= maxChatMessages ||
+                versionDelta > chatMessages.size())
+            {
+                fullRebuild = true;
+            }
+            else
+            {
+                addedCount =
+                    static_cast<std::size_t>(versionDelta);
+
+                const std::size_t previousCount =
+                    visualMessages.size();
+
+                const std::size_t expectedCurrentCount =
+                    (std::min)(
+                        previousCount + addedCount,
+                        maxChatMessages
+                        );
+
+                if (previousCount !=
+                    preparedMessagesSnapshot->size() ||
+                    chatMessages.size() != expectedCurrentCount)
                 {
-                    additionalGap += messageGap;
+                    fullRebuild = true;
                 }
             }
+        }
+    }
+    else if (!fullRebuild &&
+        chatMessagesSnapshot != preparedMessagesSnapshot)
+    {
+        fullRebuild = true;
+    }
 
-            const float rowY =
-                topY +
-                rowHeight * i +
-                additionalGap +
-                rowHeight * 0.5f;
+    // ------------------------------------------------------------
+    // Полная перестройка нужна только при сбросе или рассинхронизации
+    // ------------------------------------------------------------
 
-            const float rowX =
-                10.0f +
-                padding;
+    bool rebuiltAll = false;
+
+    if (fullRebuild)
+    {
+        visualMessages.clear();
+        visualMessages.reserve(maxChatMessages);
+
+        for (const auto& msg : chatMessages)
+        {
+            const ChatVisualMessage* previous =
+                visualMessages.empty()
+                ? nullptr
+                : &visualMessages.back();
+
+            visualMessages.push_back(
+                makeVisualMessage(msg, previous)
+            );
+        }
+
+        rebuiltAll = true;
+    }
+    else if (addedCount > 0)
+    {
+        const std::size_t retainedCount =
+            chatMessages.size() - addedCount;
+
+        const std::size_t droppedCount =
+            visualMessages.size() - retainedCount;
+
+        // Удаляем визуальные данные сообщений, вытесненных из истории.
+        if (droppedCount > 0)
+        {
+            visualMessages.erase(
+                visualMessages.begin(),
+                visualMessages.begin() +
+                static_cast<std::vector<ChatVisualMessage>::difference_type>(
+                    droppedCount
+                    )
+            );
+        }
+
+        // Перепривязываем указатели к новому неизменяемому снимку.
+        for (std::size_t i = 0; i < visualMessages.size(); ++i)
+        {
+            visualMessages[i].message = &chatMessages[i];
+        }
+
+        // После удаления старейшего сообщения первый оставшийся
+        // элемент мог перестать быть продолжением группы отправителя.
+        if (droppedCount > 0 && !visualMessages.empty())
+        {
+            visualMessages.front() =
+                makeVisualMessage(chatMessages.front(), nullptr);
+        }
+
+        // Готовим только новые сообщения.
+        for (std::size_t i = retainedCount;
+            i < chatMessages.size();
+            ++i)
+        {
+            const ChatVisualMessage* previous =
+                visualMessages.empty()
+                ? nullptr
+                : &visualMessages.back();
+
+            visualMessages.push_back(
+                makeVisualMessage(chatMessages[i], previous)
+            );
+        }
+    }
+
+    // Фиксируем снимок только после обновления всех указателей.
+    if (messagesChanged || fullRebuild)
+    {
+        preparedMessagesSnapshot = chatMessagesSnapshot;
+        preparedChatVersion = chatView.version;
+        preparedChatResetVersion = chatView.resetVersion;
+        hasPreparedChatView = true;
+    }
+
+    // Если база защитных ников загрузилась позднее сообщений,
+    // пересчитываем отметки один раз для существующей истории.
+    if (rebuiltAll)
+    {
+        verifiedMarksPrepared = databaseLoaded;
+    }
+    else if (databaseLoaded && !verifiedMarksPrepared)
+    {
+        for (auto& visual : visualMessages)
+        {
+            visual.hasVerifiedMark =
+                !visual.isContinuation &&
+                userSkinDatabase.requiresPassword(
+                    visual.message->name
+                );
+
+            if (visual.isEnter)
+                updateEnterLayout(visual);
+        }
+
+        verifiedMarksPrepared = true;
+    }
+
+    recordChatStage(FrameProfiler::ChatPrepare);
+
+    // ------------------------------------------------------------
+    // Выбираем последние сообщения с учётом частичной видимости
+    // верхнего сообщения, как в Java ScrollPane.
+    // ------------------------------------------------------------
+
+    std::vector<size_t> visibleIndices;
+    float usedHeight = 0.0f;
+
+    for (size_t i = visualMessages.size(); i > 0; --i)
+    {
+        const size_t index = i - 1;
+
+        const ChatVisualMessage& visual =
+            visualMessages[index];
+
+        const float requiredHeight =
+            visual.topMargin +
+            visual.boxHeight +
+            visual.bottomMargin;
+
+        visibleIndices.push_back(index);
+        usedHeight += requiredHeight;
+
+        // Включаем первое сообщение, которое пересекает
+        // верхнюю границу области чата.
+        if (usedHeight >= contentHeight)
+            break;
+    }
+
+    std::reverse(
+        visibleIndices.begin(),
+        visibleIndices.end()
+    );
+    recordChatStage(FrameProfiler::ChatVisibility);
+
+    // ------------------------------------------------------------
+    // Общая полупрозрачная область чата
+    // ------------------------------------------------------------
+
+    const float panelHeight =
+        contentHeight + panelPadding * 2.0f;
+
+    const float panelCenterX =
+        panelWidth * 0.5f + 10.0f;
+
+    const float hudReservedHeight =
+        ownedIds.empty() ? 16.0f : 52.0f;
+
+    const float panelCenterY =
+        screenH -
+        hudReservedHeight -
+        panelHeight * 0.5f;
+
+    uiPanel.draw(
+        panelCenterX,
+        panelCenterY,
+        panelWidth,
+        panelHeight,
+        25.0f,
+
+        // rgba(0, 0, 0, 0.3)
+        0.0f, 0.0f, 0.0f, 0.30f,
+
+        // Белая граница с прозрачностью 15%.
+        1.0f, 1.0f, 1.0f, 0.15f,
+
+        1.0f,
+
+        screenW,
+        screenH
+    );
+
+    const float panelLeftX =
+        panelCenterX - panelWidth * 0.5f;
+
+    const float avatarLeftX =
+        panelLeftX + 10.0f;
+
+    const float avatarCenterX =
+        avatarLeftX + avatarBoxWidth * 0.5f;
+
+    const float bubbleLeftX =
+        avatarLeftX + avatarBoxWidth + avatarGap;
+
+    const float textX =
+        bubbleLeftX + bubblePaddingLeft;
+
+
+    // Границы области отображения сообщений.
+    const float contentBottom =
+        panelCenterY +
+        panelHeight * 0.5f -
+        panelPadding;
+
+    const float contentTop =
+        contentBottom - contentHeight;
+
+    // OpenGL использует начало координат в левом нижнем углу
+    // для glScissor, поэтому преобразуем Y из координат HUD.
+    glEnable(GL_SCISSOR_TEST);
+
+    glScissor(
+        static_cast<GLint>(std::floor(panelLeftX)),
+        static_cast<GLint>(std::floor(screenH - contentBottom)),
+        static_cast<GLsizei>(std::ceil(panelWidth)),
+        static_cast<GLsizei>(std::ceil(contentHeight))
+    );
+
+    float cursorY =
+        contentBottom - usedHeight;
+    std::vector<std::pair<float, float>> verifiedMarks;
+
+    const auto queueVerifiedMarkOnAvatar =
+        [&verifiedMarks](
+            float avatarCenterX,
+            float avatarCenterY,
+            float avatarSize)
+        {
+            constexpr float markWidth = 12.0f;
+            constexpr float markHeight = 9.0f;
+            constexpr float inset = 2.0f;
+
+            verifiedMarks.emplace_back(
+                avatarCenterX + avatarSize * 0.5f
+                - markWidth - inset,
+                avatarCenterY + avatarSize * 0.5f
+                - markHeight - inset
+            );
+        };
+
+    // ------------------------------------------------------------
+    // Уровни на верхних краях аватара
+    // ------------------------------------------------------------
+
+    const auto drawLevelBadges =
+        [&](const ChatMessage& msg,
+            float avatarCenterX,
+            float avatarCenterY)
+        {
+            constexpr float badgeHeight = 14.0f;
+            constexpr float badgePaddingX = 2.0f;
+            constexpr float badgeMinWidth = 18.0f;
+            constexpr float badgeOffsetX = 14.0f;
+
+            constexpr float badgeTextScale = 0.8f;
+
+            // Бейджи накладываются на верхний край аватара.
+            const float badgeCenterY =
+                avatarCenterY - avatarSize * 0.5f + 6.0f;
+
+            const auto drawBadge =
+                [&](const std::string& text,
+                    float centerX,
+                    float fillR,
+                    float fillG,
+                    float fillB,
+                    float textR,
+                    float textG,
+                    float textB)
+                {
+                    const float textWidth =
+                        chatFont.measureWidth(text) * badgeTextScale;
+
+                    const float badgeWidth =
+                        std::max(
+                            badgeMinWidth,
+                            textWidth + badgePaddingX * 2.0f
+                        );
+
+                    // Фон бейджа — скруглённая плашка.
+                    uiPanel.draw(
+                        centerX,
+                        badgeCenterY,
+                        badgeWidth,
+                        badgeHeight,
+                        badgeHeight * 0.5f,
+
+                        // Заливка
+                        fillR,
+                        fillG,
+                        fillB,
+                        1.0f,
+
+                        // Без границы
+                        0.0f,
+                        0.0f,
+                        0.0f,
+                        0.0f,
+                        0.0f,
+
+                        screenW,
+                        screenH
+                    );
+
+                    // Число по центру плашки.
+                    const float textX =
+                        centerX - textWidth * 0.5f;
+
+                    const float scaledTextHeight =
+                        chatFont.lineHeight() * badgeTextScale;
+
+                    const float textY =
+                        badgeCenterY - scaledTextHeight * 0.5f;
+
+                    chatTextRenderer.add(
+                        chatFont,
+                        text,
+                        textX,
+                        textY,
+                        textR,
+                        textG,
+                        textB,
+                        1.0f,
+                        badgeTextScale
+                    );
+                };
 
             // --------------------------------------------------------
-            // Текст начинается справа от аватара.
+            // Слева — обычный уровень, золотистый фон.
+            // Нулевой обычный уровень не отображаем, как в leaderboard.
             // --------------------------------------------------------
 
-            const float textX =
-                rowX +
-                avatarSize +
-                avatarGap;
-
-            // --------------------------------------------------------
-            // Первая строка сообщения:
-            // аватар + ник + текст.
-            // --------------------------------------------------------
-
-            if (line.firstLine)
+            if (msg.userLevel > 0)
             {
-                const ChatMessage& msg =
-                    *line.message;
+                drawBadge(
+                    std::to_string(msg.userLevel),
+                    avatarCenterX - badgeOffsetX,
 
-                const std::string displayName =
-                    msg.name == "Spectator"
-                    ? msg.name +
-                    std::to_string(msg.playerID)
-                    : msg.name;
+                    0.855f,
+                    0.647f,
+                    0.125f,
 
-                const float nicknameR =
-                    static_cast<float>(
-                        msg.colorR
-                        ) / 255.0f;
+                    0.0f,
+                    0.0f,
+                    0.0f
+                );
+            }
 
-                const float nicknameG =
-                    static_cast<float>(
-                        msg.colorG
-                        ) / 255.0f;
+            // --------------------------------------------------------
+            // Справа — сезонный уровень, зелёный фон.
+            // Отображаем всегда, включая значение 1.
+            // --------------------------------------------------------
 
-                const float nicknameB =
-                    static_cast<float>(
-                        msg.colorB
-                        ) / 255.0f;
+            if (msg.userLevelSeason > 0)
+            {
+                drawBadge(
+                    std::to_string(msg.userLevelSeason),
+                    avatarCenterX + badgeOffsetX,
 
-                // ----------------------------------------------------
-                // Аватар
-                // ----------------------------------------------------
+                    0.0f,
+                    0.5f,
+                    0.0f,
 
-                const float avatarCenterX =
-                    rowX +
-                    avatarSize * 0.5f;
+                    0.0f,
+                    0.0f,
+                    0.0f
+                );
+            }
+        };
 
+    // ------------------------------------------------------------
+    // Отрисовка сообщений
+    // ------------------------------------------------------------
+    chatTextRenderer.beginProfile(profiler);
+
+    for (const size_t index : visibleIndices)
+    {
+        const ChatVisualMessage& visual =
+            visualMessages[index];
+
+        const ChatMessage& msg =
+            *visual.message;
+
+        cursorY += visual.topMargin;
+
+        const float boxTop = cursorY;
+        const float boxCenterY =
+            boxTop + visual.boxHeight * 0.5f;
+
+        const float nicknameR =
+            static_cast<float>(msg.colorR) / 255.0f;
+
+        const float nicknameG =
+            static_cast<float>(msg.colorG) / 255.0f;
+
+        const float nicknameB =
+            static_cast<float>(msg.colorB) / 255.0f;
+
+        if (visual.isEnter)
+        {
+            // ----------------------------------------------------
+            // Простое уведомление: аватар + ник + текст
+            // ----------------------------------------------------
+
+            const std::string enterText = " enters the game";
+
+            constexpr float enterAvatarSize = 44.0f;
+            constexpr float enterAvatarRadius = 22.0f;
+            constexpr float enterAvatarBorderWidth = 2.0f;
+            constexpr float enterAvatarGap = 10.0f;
+
+            const float avatarLeftX =
+                panelLeftX + panelPadding;
+
+            const float avatarCenterX =
+                avatarLeftX + enterAvatarSize * 0.5f;
+
+            const float avatarCenterY = boxCenterY;
+
+            // ----------------------------------------------------
+            // Аватар игрока
+            // ----------------------------------------------------
+
+            GLuint avatarTexture = 0;
+
+            if (msg.skin != 0)
+                avatarTexture = skinManager.getTexture(msg.skin);
+
+            if (avatarTexture != 0)
+            {
+                chatSkinShader.use();
+
+                chatSkinShader.setVec2(
+                    chatSkinCenter,
+                    avatarCenterX,
+                    avatarCenterY
+                );
+
+                chatSkinShader.setFloat(
+                    chatSkinRadius,
+                    enterAvatarRadius
+                );
+
+                chatSkinShader.setVec2(
+                    chatSkinScreenSize,
+                    screenW,
+                    screenH
+                );
+
+                chatSkinShader.setFloat(
+                    chatSkinBorderWidth,
+                    enterAvatarBorderWidth
+                );
+
+                chatSkinShader.setVec3(
+                    chatSkinBorderColor,
+                    1.0f,
+                    1.0f,
+                    1.0f
+                );
+
+                glActiveTexture(GL_TEXTURE0);
+                glBindTexture(GL_TEXTURE_2D, avatarTexture);
+
+                chatSkinShader.setInt(chatSkinTexture, 0);
+
+                skinMesh.draw();
+            }
+            else
+            {
+                // Fallback, если скин отсутствует.
+                uiPanel.draw(
+                    avatarCenterX,
+                    avatarCenterY,
+                    enterAvatarSize,
+                    enterAvatarSize,
+                    enterAvatarRadius,
+
+                    nicknameR,
+                    nicknameG,
+                    nicknameB,
+                    1.0f,
+
+                    1.0f,
+                    1.0f,
+                    1.0f,
+                    1.0f,
+
+                    enterAvatarBorderWidth,
+
+                    screenW,
+                    screenH
+                );
+            }
+
+            drawLevelBadges(
+                msg,
+                avatarCenterX,
+                avatarCenterY
+            );
+
+            if (visual.hasVerifiedMark)
+            {
+                queueVerifiedMarkOnAvatar(
+                    avatarCenterX,
+                    avatarCenterY,
+                    enterAvatarSize
+                );
+            }
+
+            // ----------------------------------------------------
+            // Ник и текст уведомления с переносом строк
+            // ----------------------------------------------------
+
+            const float enterNameX =
+                avatarLeftX +
+                enterAvatarSize +
+                enterAvatarGap;
+
+            const float enterTextY =
+                boxTop + enterPaddingBottom * 0.5f;
+
+            // ----------------------------------------------------
+            // Ник — цветной, может занимать несколько строк
+            // ----------------------------------------------------
+
+            for (size_t lineIndex = 0;
+                lineIndex < visual.enterNameLines.size();
+                ++lineIndex)
+            {
+                const float lineY =
+                    enterTextY +
+                    lineHeight * static_cast<float>(lineIndex);
+
+                chatTextRenderer.add(
+                    chatFont,
+                    visual.enterNameLines[lineIndex],
+                    enterNameX,
+                    lineY,
+                    nicknameR,
+                    nicknameG,
+                    nicknameB,
+                    1.0f
+                );
+            }
+
+            // ----------------------------------------------------
+            // "enters the game" — белый текст
+            // ----------------------------------------------------
+
+            const size_t lastNameLineIndex =
+                visual.enterNameLines.size() - 1;
+
+            const float lastNameLineWidth =
+                visual.enterLastNameWidth;
+
+            const float enterSuffixX =
+                visual.enterTextOnSecondLine
+                ? enterNameX
+                : enterNameX + lastNameLineWidth;
+
+            const size_t enterSuffixLineIndex =
+                lastNameLineIndex +
+                (visual.enterTextOnSecondLine ? 1u : 0u);
+
+            const float enterSuffixY =
+                enterTextY +
+                lineHeight * static_cast<float>(enterSuffixLineIndex);
+
+            chatTextRenderer.add(
+                chatFont,
+                enterText,
+                enterSuffixX,
+                enterSuffixY,
+                1.0f,
+                1.0f,
+                1.0f,
+                1.0f
+            );
+        }
+        else
+        {
+            // ----------------------------------------------------
+            // Тип 2: обычное сообщение в собственном пузыре
+            // ----------------------------------------------------
+
+            const bool firstForSender =
+                !visual.isContinuation;
+
+            // ----------------------------------------------------
+            // Хвостик у первого сообщения отправителя
+            // Рисуем ДО пузыря, чтобы его внутренняя часть
+            // перекрылась фоном сообщения.
+            // ----------------------------------------------------
+
+            if (firstForSender)
+            {
+                uiPanel.drawTriangle(
+                    bubbleLeftX + 0.25f, boxTop + 11.0f,
+                    bubbleLeftX - 9.0f, boxTop + 19.0f,
+                    bubbleLeftX + 0.25f, boxTop + 25.0f,
+
+                    // Цвет пузыря #80808057
+                    128.0f / 255.0f,
+                    128.0f / 255.0f,
+                    128.0f / 255.0f,
+                    87.0f / 255.0f,
+
+                    screenW,
+                    screenH
+                );
+            }
+
+            // ----------------------------------------------------
+            // Фон пузыря — все углы скруглённые
+            // ----------------------------------------------------
+
+            uiPanel.drawRoundedCorners(
+                bubbleLeftX + bubbleWidth * 0.5f,
+                boxCenterY,
+                bubbleWidth,
+                visual.boxHeight,
+
+                bubbleRadius,
+                bubbleRadius,
+                bubbleRadius,
+                bubbleRadius,
+
+                // Фон #80808057
+                128.0f / 255.0f,
+                128.0f / 255.0f,
+                128.0f / 255.0f,
+                87.0f / 255.0f,
+
+                // Без границы
+                1.0f,
+                1.0f,
+                1.0f,
+                0.0f,
+
+                0.0f,
+
+                screenW,
+                screenH
+            );
+
+            // ----------------------------------------------------
+            // Аватар: рисуем только у первого сообщения отправителя
+            // ----------------------------------------------------
+
+            if (!visual.isContinuation)
+            {
                 const float avatarCenterY =
-                    rowY;
+                    boxTop + avatarSize * 0.5f;
 
                 GLuint avatarTexture = 0;
 
@@ -631,11 +1200,7 @@ void ChatHUD::draw(
                 }
                 else
                 {
-                    // ------------------------------------------------
-                    // Skin ещё не загружен / отсутствует.
-                    // Используем цветной fallback.
-                    // ------------------------------------------------
-
+                    // Цветной аватар, если скин отсутствует.
                     uiPanel.draw(
                         avatarCenterX,
                         avatarCenterY,
@@ -659,54 +1224,147 @@ void ChatHUD::draw(
                         screenH
                     );
                 }
-
-                // ----------------------------------------------------
-                // Ник
-                // ----------------------------------------------------
-
-                textRenderer.addTextLeftAlignedColored(
-                    font,
-                    displayName,
-                    textX,
-                    rowY,
-                    fontScale,
-                    nicknameR,
-                    nicknameG,
-                    nicknameB
+                drawLevelBadges(
+                    msg,
+                    avatarCenterX,
+                    avatarCenterY
                 );
+
+                if (visual.hasVerifiedMark)
+                {
+                    queueVerifiedMarkOnAvatar(
+                        avatarCenterX,
+                        avatarCenterY,
+                        avatarSize
+                    );
+                }
+            }
+
+            // ----------------------------------------------------
+            // Ник отдельной строкой
+            // ----------------------------------------------------
+            if (!visual.isContinuation)
+            {
+                const float nicknameY =
+                    boxTop + bubblePaddingTop;
 
                 const float nicknameWidth =
-                    font.measureWidth(
-                        displayName
-                    ) * fontScale;
+                    visual.displayNameWidth;
 
-                // ----------------------------------------------------
-                // Текст после ника
-                // ----------------------------------------------------
+                chatTextRenderer.add(
+                    chatFont,
+                    visual.displayName,
+                    textX,
+                    nicknameY,
+                    nicknameR,
+                    nicknameG,
+                    nicknameB,
+                    1.0f
+                );
 
-                textRenderer.addTextLeftAligned(
-                    font,
-                    line.text,
+                // Двоеточие выводится после ника и, при необходимости, значка.
+                chatTextRenderer.add(
+                    chatFont,
+                    ":",
                     textX + nicknameWidth,
-                    rowY,
-                    fontScale
+                    nicknameY,
+                    nicknameR,
+                    nicknameG,
+                    nicknameB,
+                    1.0f
                 );
             }
-            else
-            {
-                // ----------------------------------------------------
-                // Продолжение длинного сообщения.
-                // Ник и аватар не повторяем.
-                // ----------------------------------------------------
 
-                textRenderer.addTextLeftAligned(
-                    font,
-                    line.text,
+            // ----------------------------------------------------
+            // Текст сообщения под ником
+            // ----------------------------------------------------
+
+            const float bodyFirstLineY =
+                boxTop +
+                bubblePaddingTop +
+                (
+                    visual.isContinuation
+                    ? 0.0f
+                    : lineHeight + nicknameGap
+                    );
+
+            for (size_t lineIndex = 0;
+                lineIndex < visual.lines.size();
+                ++lineIndex)
+            {
+                const float lineY =
+                    bodyFirstLineY +
+                    lineHeight * static_cast<float>(lineIndex);
+
+                chatTextRenderer.add(
+                    chatFont,
+                    visual.lines[lineIndex],
                     textX,
-                    rowY,
-                    fontScale
+                    lineY,
+                    1.0f,
+                    1.0f,
+                    1.0f,
+                    1.0f
                 );
             }
         }
+
+        cursorY +=
+            visual.boxHeight +
+            visual.bottomMargin;
     }
+    chatTextRenderer.flush(
+        chatFont,
+        screenW,
+        screenH
+    );
+    recordChatStage(FrameProfiler::ChatRender);
+
+    // Рисуем галочки поверх текста, как отдельный слой.
+    const auto drawCheckTriangle =
+        [&](float x1, float y1,
+            float x2, float y2,
+            float x3, float y3)
+        {
+            uiPanel.drawTriangle(
+                x1, y1,
+                x2, y2,
+                x3, y3,
+                1.0f, 1.0f, 0.0f, 1.0f,
+                screenW,
+                screenH
+            );
+        };
+
+    for (const auto& [x, y] : verifiedMarks)
+    {
+        // Короткий штрих.
+        drawCheckTriangle(
+            x, y + 5.0f,
+            x + 1.7f, y + 3.4f,
+            x + 5.0f, y + 6.2f
+        );
+
+        drawCheckTriangle(
+            x, y + 5.0f,
+            x + 5.0f, y + 6.2f,
+            x + 3.5f, y + 7.8f
+        );
+
+        // Длинный штрих.
+        drawCheckTriangle(
+            x + 3.5f, y + 7.8f,
+            x + 5.1f, y + 9.0f,
+            x + 12.0f, y + 2.0f
+        );
+
+        drawCheckTriangle(
+            x + 3.5f, y + 7.8f,
+            x + 12.0f, y + 2.0f,
+            x + 10.5f, y + 0.6f
+        );
+    }
+    recordChatStage(FrameProfiler::ChatVerifiedMarks);
+
+    glDisable(GL_SCISSOR_TEST);
 }

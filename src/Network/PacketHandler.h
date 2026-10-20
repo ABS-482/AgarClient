@@ -4,6 +4,8 @@
 #include "../Game/World.h"
 
 #include <cstdint>
+#include <atomic>
+#include <chrono>
 
 class NetworkClient;
 
@@ -23,6 +25,16 @@ public:
         m_networkClient = &client;
     }
 
+    float tickMs() const
+    {
+        return m_tickMs.load();
+    }
+
+    float jitterMs() const
+    {
+        return m_jitterMs.load();
+    }
+
 private:
     void handleWorldUpdate(PacketReader& reader);
     void handleColorsViaPid(PacketReader& reader);
@@ -33,8 +45,13 @@ private:
     void handleUsersList(PacketReader& reader);
     void handleChatMessage(PacketReader& reader, bool isPrivate);
     void handleDelayedNickRequest(PacketReader& reader);
+    void handleGameMode(PacketReader& reader);
 
     int m_serverProtocol;
     World& m_world;
     NetworkClient* m_networkClient = nullptr;
+
+    std::atomic<float> m_tickMs{ 50.0f };
+    std::atomic<float> m_jitterMs{ 0.0f };
+    std::chrono::steady_clock::time_point m_lastWorld{};
 };

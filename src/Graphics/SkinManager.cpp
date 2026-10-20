@@ -9,12 +9,23 @@
 #include <iostream>
 #include <iterator>
 #include <string>
+#include <cstddef>
+#include <utility>
+#include "../Core/AssetPath.h"
+
+namespace
+{
+    constexpr std::size_t MaxSkinDownloadBytes =
+        2u * 1024u * 1024u;
+
+    constexpr int MaxSkinDimension = 1024;
+}
 
 #pragma comment(lib, "winhttp.lib")
 
 SkinManager::SkinManager(int workerThreads)
 {
-    GLuint bombTexture = loadLocalTexture("C:/dev/AgarClient/assets/skins/bomb.png");
+    GLuint bombTexture = loadLocalTexture(AssetPath::get("skins/bomb.png").c_str());
 
     m_textures.emplace(63895, bombTexture);
 
@@ -26,13 +37,44 @@ SkinManager::SkinManager(int workerThreads)
         0
     );
 
+    if (m_httpSession)
+    {
+        const HINTERNET session =
+            reinterpret_cast<HINTERNET>(m_httpSession);
+
+        if (!WinHttpSetTimeouts(
+            session,
+            5000, // DNS-разрешение
+            5000, // подключение
+            5000, // отправка
+            5000  // получение данных
+        ))
+        {
+            std::cerr
+                << "WinHttpSetTimeouts failed: "
+                << GetLastError()
+                << '\n';
+        }
+    }
+    else
+    {
+        std::cerr
+            << "WinHttpOpen failed: "
+            << GetLastError()
+            << '\n';
+    }
+
     for (int i = 0; i < workerThreads; ++i)
         m_workers.emplace_back(&SkinManager::workerLoop, this);
 }
 
 SkinManager::~SkinManager()
 {
-    m_stopping = true;
+    {
+        std::lock_guard<std::mutex> lock(m_requestMutex);
+        m_stopping = true;
+    }
+
     m_requestCv.notify_all();
 
     for (auto& worker : m_workers)
@@ -57,15 +99,20 @@ SkinManager::~SkinManager()
     }
 }
 
-std::string SkinManager::buildSkinUrl(uint32_t skinId) const
+std::string SkinManager::buildSkinUrl(
+    uint32_t skinId
+) const
 {
-    std::string id = std::to_string(skinId);
-    char lastDigit = id.back();
+    const std::string id =
+        std::to_string(skinId);
+
+    const uint32_t shard =
+        (skinId % 8u) + 1u;
 
     return
-        "http://skins" +
-        std::string(1, lastDigit) +
-        "cached.petri-dish.ru/engine/serverskins/" +
+        "https://skins" +
+        std::to_string(shard) +
+        "cached.petridish.info/engine/serverskins/" +
         id +
         ".png";
 }
@@ -175,11 +222,24 @@ GLuint SkinManager::getTexture(uint32_t skinId)
 
 void SkinManager::processCompleted()
 {
+    constexpr std::size_t maxUploadsPerFrame = 3;
+
     std::queue<DecodedImage> ready;
 
+    // Забираем не больше трёх завершённых загрузок за кадр.
+    // Остальные остаются в очереди для следующих кадров.
     {
         std::lock_guard<std::mutex> lock(m_resultMutex);
-        std::swap(ready, m_resultQueue);
+
+        for (
+            std::size_t i = 0;
+            i < maxUploadsPerFrame && !m_resultQueue.empty();
+            ++i
+            )
+        {
+            ready.push(std::move(m_resultQueue.front()));
+            m_resultQueue.pop();
+        }
     }
 
     while (!ready.empty())
@@ -196,18 +256,42 @@ void SkinManager::processCompleted()
             glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
 
             glTexImage2D(
-                GL_TEXTURE_2D, 0, GL_RGBA8,
-                img.width, img.height, 0,
-                GL_RGBA, GL_UNSIGNED_BYTE,
+                GL_TEXTURE_2D,
+                0,
+                GL_RGBA8,
+                img.width,
+                img.height,
+                0,
+                GL_RGBA,
+                GL_UNSIGNED_BYTE,
                 img.pixels.data()
             );
 
             glGenerateMipmap(GL_TEXTURE_2D);
 
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+            glTexParameteri(
+                GL_TEXTURE_2D,
+                GL_TEXTURE_MIN_FILTER,
+                GL_LINEAR_MIPMAP_LINEAR
+            );
+
+            glTexParameteri(
+                GL_TEXTURE_2D,
+                GL_TEXTURE_MAG_FILTER,
+                GL_LINEAR
+            );
+
+            glTexParameteri(
+                GL_TEXTURE_2D,
+                GL_TEXTURE_WRAP_S,
+                GL_CLAMP_TO_EDGE
+            );
+
+            glTexParameteri(
+                GL_TEXTURE_2D,
+                GL_TEXTURE_WRAP_T,
+                GL_CLAMP_TO_EDGE
+            );
 
             glBindTexture(GL_TEXTURE_2D, 0);
 
@@ -215,10 +299,14 @@ void SkinManager::processCompleted()
         }
         else
         {
-            // Не удалось — кэшируем 0, чтобы не долбить сервер
-            // повторными запросами каждый кадр.
+            // Ошибочные и отклонённые изображения кэшируем,
+            // чтобы не запрашивать их повторно каждый кадр.
             m_textures.emplace(img.skinId, 0);
-            std::cerr << "Failed to load skin " << img.skinId << '\n';
+
+            std::cerr
+                << "Failed to load skin "
+                << img.skinId
+                << '\n';
         }
 
         ready.pop();
@@ -251,21 +339,77 @@ void SkinManager::workerLoop()
 
         std::vector<unsigned char> raw;
 
-        if (downloadSkin(skinId, raw))
+        if (downloadSkin(skinId, raw) && !raw.empty())
         {
-            int width = 0, height = 0, channels = 0;
+            int width = 0;
+            int height = 0;
+            int channels = 0;
 
-            unsigned char* pixels = stbi_load_from_memory(
-                raw.data(), static_cast<int>(raw.size()),
-                &width, &height, &channels, 4
-            );
+            // Сначала проверяем заголовок, ещё не декодируя всё изображение.
+            const bool imageInfoValid =
+                stbi_info_from_memory(
+                    raw.data(),
+                    static_cast<int>(raw.size()),
+                    &width,
+                    &height,
+                    &channels
+                ) != 0;
 
-            if (pixels)
+            const bool dimensionsValid =
+                imageInfoValid &&
+                width > 0 &&
+                height > 0 &&
+                width <= MaxSkinDimension &&
+                height <= MaxSkinDimension;
+
+            if (dimensionsValid)
             {
-                result.width = width;
-                result.height = height;
-                result.pixels.assign(pixels, pixels + (width * height * 4));
-                stbi_image_free(pixels);
+                int decodedWidth = 0;
+                int decodedHeight = 0;
+                int decodedChannels = 0;
+
+                unsigned char* pixels = stbi_load_from_memory(
+                    raw.data(),
+                    static_cast<int>(raw.size()),
+                    &decodedWidth,
+                    &decodedHeight,
+                    &decodedChannels,
+                    4
+                );
+
+                if (pixels)
+                {
+                    // Дополнительно проверяем фактические размеры результата.
+                    const bool decodedDimensionsValid =
+                        decodedWidth > 0 &&
+                        decodedHeight > 0 &&
+                        decodedWidth <= MaxSkinDimension &&
+                        decodedHeight <= MaxSkinDimension;
+
+                    if (decodedDimensionsValid)
+                    {
+                        const std::size_t pixelCount =
+                            static_cast<std::size_t>(decodedWidth) *
+                            static_cast<std::size_t>(decodedHeight);
+
+                        result.width = decodedWidth;
+                        result.height = decodedHeight;
+
+                        result.pixels.assign(
+                            pixels,
+                            pixels + pixelCount * 4u
+                        );
+                    }
+
+                    stbi_image_free(pixels);
+                }
+            }
+
+            if (result.pixels.empty())
+            {
+                std::cerr
+                    << "Rejected invalid or oversized skin "
+                    << skinId << '\n';
             }
         }
 
@@ -405,23 +549,41 @@ bool SkinManager::downloadSkin(
         return false;
     }
 
+    bool downloadSucceeded = true;
+
     while (true)
     {
         DWORD available = 0;
 
-        if (!WinHttpQueryDataAvailable(
-            request,
-            &available))
+        if (!WinHttpQueryDataAvailable(request, &available))
         {
+            downloadSucceeded = false;
             break;
         }
 
         if (available == 0)
             break;
 
-        std::size_t oldSize = data.size();
+        const std::size_t oldSize = data.size();
+        const std::size_t availableSize =
+            static_cast<std::size_t>(available);
 
-        data.resize(oldSize + available);
+        // Не позволяем накопить слишком большой файл.
+        if (
+            oldSize > MaxSkinDownloadBytes ||
+            availableSize > MaxSkinDownloadBytes - oldSize
+            )
+        {
+            std::cerr
+                << "Skin " << skinId
+                << " exceeds the download size limit\n";
+
+            data.clear();
+            downloadSucceeded = false;
+            break;
+        }
+
+        data.resize(oldSize + availableSize);
 
         DWORD downloaded = 0;
 
@@ -432,15 +594,23 @@ bool SkinManager::downloadSkin(
             &downloaded))
         {
             data.resize(oldSize);
+            downloadSucceeded = false;
             break;
         }
 
-        if (downloaded != available)
-            data.resize(oldSize + downloaded);
+        data.resize(
+            oldSize + static_cast<std::size_t>(downloaded)
+        );
     }
 
     WinHttpCloseHandle(request);
     WinHttpCloseHandle(connection);
+
+    if (!downloadSucceeded)
+    {
+        data.clear();
+        return false;
+    }
 
     return !data.empty();
 }

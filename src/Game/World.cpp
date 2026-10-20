@@ -7,7 +7,8 @@ void World::updateFoodBlob(
     int16_t y,
     int8_t size,
     uint8_t colorIndex,
-    uint8_t cellType
+    uint8_t cellType,
+    std::chrono::steady_clock::time_point updateTime
 )
 {
     std::lock_guard<std::mutex> lock(m_mutex);
@@ -19,7 +20,8 @@ void World::updateFoodBlob(
     blob.targetX = static_cast<float>(x);
     blob.targetY = static_cast<float>(y);
     blob.targetSize = static_cast<float>(size);
-    blob.lastUpdateTime = std::chrono::steady_clock::now();
+    blob.lastUpdateTime =
+        updateTime;
 
     blob.cellType = static_cast<CellType>(cellType);
     blob.colorIndex = colorIndex;
@@ -40,7 +42,8 @@ void World::updateVirusBlob(
     uint8_t colorIndex,
     uint8_t flags,
     uint16_t playerID,
-    const std::string& name
+    const std::string& name,
+    std::chrono::steady_clock::time_point updateTime
 )
 {
     std::lock_guard<std::mutex> lock(m_mutex);
@@ -52,7 +55,8 @@ void World::updateVirusBlob(
     blob.targetX = static_cast<float>(x);
     blob.targetY = static_cast<float>(y);
     blob.targetSize = static_cast<float>(size);
-    blob.lastUpdateTime = std::chrono::steady_clock::now();
+    blob.lastUpdateTime =
+        updateTime;
 
     blob.cellType = CellType::Virus;
     blob.colorIndex = colorIndex;
@@ -76,7 +80,8 @@ void World::updatePlayerBlob(
     int16_t size,
     uint8_t flags,
     uint16_t playerID,
-    const std::string& name
+    const std::string& name,
+    std::chrono::steady_clock::time_point updateTime
 )
 {
     std::lock_guard<std::mutex> lock(m_mutex);
@@ -88,7 +93,8 @@ void World::updatePlayerBlob(
     blob.targetX = static_cast<float>(x);
     blob.targetY = static_cast<float>(y);
     blob.targetSize = static_cast<float>(size);
-    blob.lastUpdateTime = std::chrono::steady_clock::now();
+    blob.lastUpdateTime =
+        updateTime;
 
     blob.cellType = CellType::Player;
     blob.playerID = playerID;
@@ -197,7 +203,10 @@ void World::reset()
     ownedIds.clear();
     m_mapBounds = MapBounds{};
     m_chatMessages.clear();
-    m_leaderboard.clear();
+    ++m_chatMessagesVersion;
+    ++m_chatMessagesResetVersion;
+    m_leaderboard =
+        std::make_shared<const std::vector<LeaderboardEntry>>();
 
     ++m_version;
 }
@@ -226,12 +235,42 @@ void World::addChatMessage(ChatMessage message)
     {
         m_chatMessages.erase(m_chatMessages.begin());
     }
+
+    ++m_chatMessagesVersion;
 }
 
 std::vector<ChatMessage> World::getChatMessages() const
 {
     std::lock_guard<std::mutex> lock(m_mutex);
     return m_chatMessages;
+}
+
+World::ChatMessagesView World::getChatMessagesView() const
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+
+    if (!m_cachedChatMessages ||
+        m_cachedChatMessagesVersion != m_chatMessagesVersion)
+    {
+        m_cachedChatMessages =
+            std::make_shared<const std::vector<ChatMessage>>(
+                m_chatMessages
+            );
+
+        m_cachedChatMessagesVersion = m_chatMessagesVersion;
+    }
+
+    return {
+        m_cachedChatMessages,
+        m_chatMessagesVersion,
+        m_chatMessagesResetVersion
+    };
+}
+
+std::shared_ptr<const std::vector<ChatMessage>>
+World::getChatMessagesSnapshot() const
+{
+    return getChatMessagesView().messages;
 }
 
 std::vector<uint32_t> World::getOwnedIds() const
@@ -266,11 +305,17 @@ WorldSnapshot World::snapshot() const
 
 void World::setLeaderboard(std::vector<LeaderboardEntry> entries)
 {
+    auto snapshot =
+        std::make_shared<const std::vector<LeaderboardEntry>>(
+            std::move(entries)
+        );
+
     std::lock_guard<std::mutex> lock(m_mutex);
-    m_leaderboard = std::move(entries);
+    m_leaderboard = std::move(snapshot);
 }
 
-std::vector<LeaderboardEntry> World::getLeaderboard() const
+std::shared_ptr<const std::vector<LeaderboardEntry>>
+World::getLeaderboardSnapshot() const
 {
     std::lock_guard<std::mutex> lock(m_mutex);
     return m_leaderboard;

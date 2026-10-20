@@ -7,6 +7,7 @@
     "ixwebsocket",
     "nlohmann-json",
     "stb",
-    "harfbuzz"
+    "harfbuzz",
+    "freetype"
   ]
 }

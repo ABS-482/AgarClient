@@ -36,6 +36,14 @@ public:
         float screenWidth, float screenHeight
     );
 
+    void drawTriangle(
+        float x0, float y0,
+        float x1, float y1,
+        float x2, float y2,
+        float fillR, float fillG, float fillB, float fillA,
+        float screenWidth, float screenHeight
+    );
+
 private:
     Shader m_shader;
 
@@ -59,4 +67,11 @@ private:
     GLint m_rcFillColor;
     GLint m_rcBorderColor;
     GLint m_rcBorderWidth;
+    Shader m_bubbleTailShader;
+
+    GLint m_tailScreenSize = -1;
+    GLint m_tailColor = -1;
+
+    GLuint m_tailVao = 0;
+    GLuint m_tailVbo = 0;
 };

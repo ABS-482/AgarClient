@@ -21,6 +21,12 @@ public:
         bool bypassRateLimit
     );
 
+    bool trySendWorldAim(
+        float aimX,
+        float aimY,
+        bool bypassRateLimit
+    );
+
 private:
     Camera& camera;
     NetworkClient& network;

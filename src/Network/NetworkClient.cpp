@@ -3,6 +3,9 @@
 #include <iostream>
 #include <cstring>
 #include <random>
+#include <algorithm>
+#include <cctype>
+#include <limits>
 
 namespace
 {
@@ -62,11 +65,43 @@ namespace
             }
         }
     }
+
+    std::string urlEncodeQueryValue(const std::string& value)
+    {
+        constexpr char hex[] = "0123456789ABCDEF";
+
+        std::string result;
+        result.reserve(value.size());
+
+        for (unsigned char c : value)
+        {
+            const bool unreserved =
+                (c >= 'A' && c <= 'Z') ||
+                (c >= 'a' && c <= 'z') ||
+                (c >= '0' && c <= '9') ||
+                c == '-' || c == '_' || c == '.' || c == '~';
+
+            if (unreserved)
+            {
+                result.push_back(static_cast<char>(c));
+            }
+            else
+            {
+                result.push_back('%');
+                result.push_back(hex[c >> 4]);
+                result.push_back(hex[c & 0x0F]);
+            }
+        }
+
+        return result;
+    }
 }
 
 NetworkClient::NetworkClient(PacketHandler& handler)
     : m_handler(handler)
 {
+    m_webSocket.disableAutomaticReconnection();
+
     ix::SocketTLSOptions tlsOptions;
     tlsOptions.caFile = "NONE";
     m_webSocket.setTLSOptions(tlsOptions);
@@ -82,6 +117,8 @@ NetworkClient::NetworkClient(PacketHandler& handler)
             {
             case ix::WebSocketMessageType::Open:
                 m_connected = true;
+                m_connectionFailed = false;
+                m_intentionalDisconnect = false;
 
                 std::cout << "WebSocket connected.\n";
 
@@ -100,10 +137,17 @@ NetworkClient::NetworkClient(PacketHandler& handler)
 
             case ix::WebSocketMessageType::Close:
                 m_connected = false;
+
+                if (!m_intentionalDisconnect)
+                    m_connectionFailed = true;
+
                 std::cout << "WebSocket closed.\n";
                 break;
 
             case ix::WebSocketMessageType::Error:
+                m_connected = false;
+                m_connectionFailed = true;
+
                 std::cerr << "WebSocket error: "
                     << msg->errorInfo.reason << '\n';
                 break;
@@ -139,8 +183,17 @@ void NetworkClient::connect(
     m_currentUrl = url;
     m_connectionMode = mode;
 
+    m_connectionFailed = false;
+    m_intentionalDisconnect = false;
+    m_lastPingAttempt = std::chrono::steady_clock::now();
+
+    m_lastPingHash.store(0, std::memory_order_relaxed);
+    m_lastPingSentAtMs.store(0, std::memory_order_relaxed);
+    m_pingMs.store(-1, std::memory_order_relaxed);
+
     std::string fullUrl =
-        url + "/connect?serverpass=" + serverPass;
+        url + "?tynda=&serverpass=" +
+        urlEncodeQueryValue(serverPass);
 
     m_webSocket.setUrl(fullUrl);
     m_webSocket.start();
@@ -148,8 +201,19 @@ void NetworkClient::connect(
 
 void NetworkClient::disconnect()
 {
+    m_intentionalDisconnect = true;
+
     m_webSocket.stop();
     m_connected = false;
+}
+
+bool NetworkClient::consumeConnectionFailed()
+{
+    if (!m_connectionFailed)
+        return false;
+
+    m_connectionFailed = false;
+    return true;
 }
 
 void NetworkClient::sendRaw(const uint8_t* data, size_t size)
@@ -159,16 +223,112 @@ void NetworkClient::sendRaw(const uint8_t* data, size_t size)
     );
 }
 
+void NetworkClient::sendPing()
+{
+    // Диапазон соответствует JS: Math.floor(Math.random() * 1000000).
+    // Ноль исключён, чтобы не путать начальное состояние с запросом.
+    static thread_local std::mt19937 generator{
+        std::random_device{}()
+    };
+
+    std::uniform_int_distribution<uint32_t> distribution(
+        1,
+        999999
+    );
+
+    uint32_t hash;
+
+    do
+    {
+        hash = distribution(generator);
+    } while (
+        hash == m_lastPingHash.load(
+            std::memory_order_relaxed
+        )
+        );
+
+    const auto now = std::chrono::steady_clock::now();
+
+    const int64_t sentAtMs =
+        std::chrono::duration_cast<std::chrono::milliseconds>(
+            now.time_since_epoch()
+        ).count();
+
+    // Сохраняем время и идентификатор до отправки.
+    m_lastPingSentAtMs.store(
+        sentAtMs,
+        std::memory_order_relaxed
+    );
+
+    m_lastPingHash.store(
+        hash,
+        std::memory_order_release
+    );
+
+    // Opcode 115 + uint32 hash в little-endian.
+    uint8_t packet[5];
+
+    packet[0] = 115;
+    packet[1] = static_cast<uint8_t>(hash & 0xFF);
+    packet[2] = static_cast<uint8_t>((hash >> 8) & 0xFF);
+    packet[3] = static_cast<uint8_t>((hash >> 16) & 0xFF);
+    packet[4] = static_cast<uint8_t>((hash >> 24) & 0xFF);
+
+    sendRaw(packet, sizeof(packet));
+}
+
+void NetworkClient::handlePingResponse(uint32_t hash) noexcept
+{
+    const uint32_t expectedHash =
+        m_lastPingHash.load(
+            std::memory_order_acquire
+        );
+
+    // Игнорируем устаревший или не соответствующий запросу ответ.
+    if (hash != expectedHash || hash == 0)
+        return;
+
+    const int64_t sentAtMs =
+        m_lastPingSentAtMs.load(
+            std::memory_order_relaxed
+        );
+
+    if (sentAtMs <= 0)
+        return;
+
+    const int64_t nowMs =
+        std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()
+        ).count();
+
+    const int64_t elapsedMs = nowMs - sentAtMs;
+
+    if (elapsedMs < 0 ||
+        elapsedMs > std::numeric_limits<int>::max())
+    {
+        return;
+    }
+
+    m_pingMs.store(
+        static_cast<int>(elapsedMs),
+        std::memory_order_relaxed
+    );
+}
+
 void NetworkClient::sendNick()
 {
-    if (m_nickname.empty())
-        return;
+    std::string nick = m_nickname.empty() ? "PetriDish.pw" : m_nickname;
+
+    std::string pass = m_playerPassword;
+    std::transform(pass.begin(), pass.end(), pass.begin(),
+        [](unsigned char c) { return std::tolower(c); });
+
+    // m_playerColor: подставьте то же значение, что даёт #color в JS
+    std::string full = nick + ":::::" + pass + ":::::" + std::to_string(m_playerColor);
 
     std::vector<uint8_t> buf;
     buf.push_back(0);
-
-    appendUtf16LE(buf, m_nickname);
-
+    appendUtf16LE(buf, full);
     sendRaw(buf.data(), buf.size());
 }
 
@@ -295,6 +455,7 @@ void NetworkClient::requestPlay()
 
 void NetworkClient::sendPlayerPassword()
 {
+
     std::vector<uint8_t> buf;
     buf.reserve(1 + 2 * m_playerPassword.size());
     buf.push_back(77);
@@ -353,5 +514,13 @@ void NetworkClient::update()
     {
         m_pendingNickResend = false;
         sendNick(); // приватный метод, но update() — тоже метод класса, доступ есть
+    }
+    const auto now = std::chrono::steady_clock::now();
+
+    if (m_connected &&
+        now - m_lastPingAttempt >= std::chrono::milliseconds(1000))
+    {
+        m_lastPingAttempt = now;
+        sendPing();
     }
 }

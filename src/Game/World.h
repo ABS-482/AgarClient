@@ -10,6 +10,7 @@
 #include <unordered_map>
 #include "Leaderboard.h"
 #include <vector>
+#include <chrono>
 
 using WorldSnapshot = std::shared_ptr<const std::unordered_map<uint32_t, Blob>>;
 
@@ -25,19 +26,45 @@ public:
         bool valid = false;
     };
 
+    struct ChatMessagesView
+    {
+        std::shared_ptr<const std::vector<ChatMessage>> messages;
+        std::uint64_t version = 0;
+        std::uint64_t resetVersion = 0;
+    };
+
     void updateFoodBlob(
-        uint32_t id, int16_t x, int16_t y, int8_t size,
-        uint8_t colorIndex, uint8_t cellType
+        uint32_t id,
+        int16_t x,
+        int16_t y,
+        int8_t size,
+        uint8_t colorIndex,
+        uint8_t cellType,
+        std::chrono::steady_clock::time_point updateTime
     );
 
     void updateVirusBlob(
-        uint32_t id, uint16_t x, uint16_t y, int16_t size, int32_t skin,
-        uint8_t colorIndex, uint8_t flags, uint16_t playerID, const std::string& name
+        uint32_t id,
+        uint16_t x,
+        uint16_t y,
+        int16_t size,
+        int32_t skin,
+        uint8_t colorIndex,
+        uint8_t flags,
+        uint16_t playerID,
+        const std::string& name,
+        std::chrono::steady_clock::time_point updateTime
     );
 
     void updatePlayerBlob(
-        uint32_t id, uint16_t x, uint16_t y, int16_t size,
-        uint8_t flags, uint16_t playerID, const std::string& name
+        uint32_t id,
+        uint16_t x,
+        uint16_t y,
+        int16_t size,
+        uint8_t flags,
+        uint16_t playerID,
+        const std::string& name,
+        std::chrono::steady_clock::time_point updateTime
     );
 
     void setPlayerName(uint16_t playerID, const std::string& name);
@@ -50,7 +77,11 @@ public:
     void setLeaderboard(std::vector<LeaderboardEntry> entries);
     void addChatMessage(ChatMessage message);
     std::vector<ChatMessage> getChatMessages() const;
-    std::vector<LeaderboardEntry> getLeaderboard() const;
+    std::shared_ptr<const std::vector<ChatMessage>>
+        getChatMessagesSnapshot() const;
+    ChatMessagesView getChatMessagesView() const;
+    std::shared_ptr<const std::vector<LeaderboardEntry>>
+        getLeaderboardSnapshot() const;
 
     // Возвращает разделяемый неизменяемый снимок мира. Если мир не менялся
     // с прошлого вызова — копирования НЕ происходит, отдаётся тот же shared_ptr.
@@ -70,8 +101,16 @@ private:
     std::unordered_map<uint16_t, uint8_t> playerColorIndexes;
     std::unordered_map<uint16_t, uint32_t> playerStickers;
     std::vector<uint32_t> ownedIds;
-    std::vector<LeaderboardEntry> m_leaderboard;
+    std::shared_ptr<const std::vector<LeaderboardEntry>> m_leaderboard =
+        std::make_shared<const std::vector<LeaderboardEntry>>();
     std::vector<ChatMessage> m_chatMessages;
+    uint64_t m_chatMessagesVersion = 1;
+    std::uint64_t m_chatMessagesResetVersion = 0;
+
+    mutable uint64_t m_cachedChatMessagesVersion = 0;
+
+    mutable std::shared_ptr<const std::vector<ChatMessage>>
+        m_cachedChatMessages;
     MapBounds m_mapBounds;
 
     // Версионирование для кэша снапшота.

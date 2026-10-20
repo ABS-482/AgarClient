@@ -1,6 +1,8 @@
 #include "Shader.h"
 
-#include <iostream>
+#include <stdexcept>
+#include <string>
+#include <vector>
 
 namespace
 {
@@ -15,9 +17,17 @@ namespace
 
         if (!success)
         {
-            char log[512];
-            glGetShaderInfoLog(shader, sizeof(log), nullptr, log);
-            std::cerr << "Shader compile error: " << log << '\n';
+            GLint len = 0;
+            glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &len);
+
+            std::vector<char> log(len > 1 ? len : 1, '\0');
+            glGetShaderInfoLog(shader, static_cast<GLsizei>(log.size()), nullptr, log.data());
+            glDeleteShader(shader);
+
+            throw std::runtime_error(
+                std::string(type == GL_VERTEX_SHADER ? "Vertex" : "Fragment") +
+                " shader compile error:\n" + log.data()
+            );
         }
 
         return shader;
@@ -27,7 +37,17 @@ namespace
 Shader::Shader(const char* vertexSrc, const char* fragmentSrc)
 {
     GLuint vs = compile(GL_VERTEX_SHADER, vertexSrc);
-    GLuint fs = compile(GL_FRAGMENT_SHADER, fragmentSrc);
+
+    GLuint fs = 0;
+    try
+    {
+        fs = compile(GL_FRAGMENT_SHADER, fragmentSrc);
+    }
+    catch (...)
+    {
+        glDeleteShader(vs);   // не оставляем утечку, если упал второй шейдер
+        throw;
+    }
 
     m_program = glCreateProgram();
     glAttachShader(m_program, vs);
@@ -36,6 +56,23 @@ Shader::Shader(const char* vertexSrc, const char* fragmentSrc)
 
     glDeleteShader(vs);
     glDeleteShader(fs);
+
+    GLint linked = 0;
+    glGetProgramiv(m_program, GL_LINK_STATUS, &linked);
+
+    if (!linked)
+    {
+        GLint len = 0;
+        glGetProgramiv(m_program, GL_INFO_LOG_LENGTH, &len);
+
+        std::vector<char> log(len > 1 ? len : 1, '\0');
+        glGetProgramInfoLog(m_program, static_cast<GLsizei>(log.size()), nullptr, log.data());
+
+        glDeleteProgram(m_program);
+        m_program = 0;
+
+        throw std::runtime_error(std::string("Shader link error:\n") + log.data());
+    }
 }
 
 Shader::~Shader()
@@ -68,7 +105,7 @@ void Shader::setVec3(GLint location, float x, float y, float z) const
     glUniform3f(location, x, y, z);
 }
 
-void Shader::setVec4(GLint location, float x, float y, float z, float w)
+void Shader::setVec4(GLint location, float x, float y, float z, float w) const
 {
     glUniform4f(location, x, y, z, w);
 }

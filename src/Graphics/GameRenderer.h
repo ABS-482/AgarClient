@@ -15,10 +15,14 @@
 #include "SkinManager.h"
 #include "SkinMesh.h"
 #include "TextRenderer.h"
+#include "LineRenderer.h"
 
 #include "../Game/RenderState.h"
 #include "../Game/World.h"
+#include "../Game/SplitPrediction.h"
 
+class VirusGuard;
+class FrameProfiler;
 class GameRenderer
 {
 public:
@@ -35,20 +39,32 @@ public:
         Camera& camera
     );
 
+    void updatePositions(
+        std::unordered_map<uint32_t, RenderState>& renderStates
+    );
+
     void updateRenderStates(
         const WorldSnapshot& blobs,
         std::unordered_map<uint32_t, RenderState>& renderStates
     );
+
+    InterpolationSettings& interpolation() { return m_interp; }
 
     void draw(
         const WorldSnapshot& blobs,
         const std::vector<uint32_t>& ownedIds,
         std::unordered_map<uint32_t, RenderState>& renderStates,
         float screenW,
-        float screenH
+        float screenH,
+        float targetWorldX,
+        float targetWorldY,
+        FrameProfiler& profiler,
+        const VirusGuard* virusGuard = nullptr,
+        bool splitPreviewHeld = false
     );
 
 private:
+    InterpolationSettings m_interp;
     Shader& circleShader;
     Shader& skinShader;
     Shader& circleInstancedShader;
@@ -62,21 +78,24 @@ private:
     TextRenderer& textRenderer;
     Font& font;
     Camera& camera;
-
+    LineRenderer lineRenderer;
+    SplitPrediction splitPrediction;
     GLint uCenter;
     GLint uRadius;
     GLint uCameraPos;
     GLint uZoom;
     GLint uScreenSize;
     GLint uColor;
-
+    GLint uOutlineWidth;
+    GLint uDepth;
     GLint skinCenter;
     GLint skinRadius;
     GLint skinCameraPos;
     GLint skinZoom;
     GLint skinScreenSize;
     GLint skinTexture;
-
+    GLint skinBaseColor;
+    GLint skinDepth;
     GLint iCameraPos;
     GLint iZoom;
     GLint iScreenSize;
@@ -87,4 +106,5 @@ private:
 
     std::vector<DrawEntry> drawList;
     std::vector<float> foodInstanceData;
+    std::vector<GLuint> skinTexturesByDrawIndex;
 };

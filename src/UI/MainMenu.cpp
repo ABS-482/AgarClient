@@ -1,8 +1,13 @@
 #include "MainMenu.h"
+#include "../Graphics/Shader.h"
+#include "../Graphics/SkinMesh.h"
+#include "../Graphics/SkinManager.h"
+#include "../Network/UserSkinDatabase.h"
 
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <string_view>
 
 namespace
 {
@@ -57,6 +62,56 @@ namespace
 
         return result;
     }
+
+    bool isUtf8Continuation(unsigned char c)
+    {
+        return (c & 0xC0) == 0x80;
+    }
+
+    std::size_t utf8CharacterCount(std::string_view text)
+    {
+        std::size_t count = 0;
+
+        for (unsigned char c : text)
+        {
+            if (!isUtf8Continuation(c))
+                ++count;
+        }
+
+        return count;
+    }
+
+    std::string utf8Prefix(
+        std::string_view text,
+        std::size_t maxCharacters
+    )
+    {
+        std::string result;
+        std::size_t i = 0;
+        std::size_t count = 0;
+
+        while (i < text.size() && count < maxCharacters)
+        {
+            std::size_t next = i + 1;
+
+            while (
+                next < text.size() &&
+                isUtf8Continuation(
+                    static_cast<unsigned char>(text[next])
+                ))
+            {
+                ++next;
+            }
+
+            result.append(text.substr(i, next - i));
+
+            i = next;
+            ++count;
+        }
+
+        return result;
+    }
+
 }
 
 MainMenu::MainMenu(
@@ -64,14 +119,57 @@ MainMenu::MainMenu(
     TextRenderer& textRenderer,
     IconRenderer& iconRenderer,
     Font& gmFont,
-    Font& menuFont
+    Font& menuFont,
+    Shader& skinShader,
+    SkinMesh& skinMesh,
+    SkinManager& skinManager,
+    UserSkinDatabase& userSkinDatabase
 )
     : uiPanel(uiPanel),
     textRenderer(textRenderer),
     iconRenderer(iconRenderer),
     gmFont(gmFont),
-    menuFont(menuFont)
+    menuFont(menuFont),
+    skinShader(skinShader),
+    skinMesh(skinMesh),
+    skinManager(skinManager),
+    userSkinDatabase(userSkinDatabase)
 {
+    m_uSkinCenter =
+        skinShader.uniformLocation("uCenter");
+
+    m_uSkinRadius =
+        skinShader.uniformLocation("uRadius");
+
+    m_uSkinCameraPos =
+        skinShader.uniformLocation("uCameraPos");
+
+    m_uSkinZoom =
+        skinShader.uniformLocation("uZoom");
+
+    m_uSkinScreenSize =
+        skinShader.uniformLocation("uScreenSize");
+
+    m_uSkinTexture =
+        skinShader.uniformLocation("uSkin");
+}
+
+void MainMenu::setPreviewNickname(
+    const std::string& nickname
+)
+{
+    if (m_previewNickname == nickname)
+        return;
+
+    m_previewNickname =
+        utf8Prefix(nickname, 15);
+
+    // Сбрасываем пароль только при изменении ника.
+    m_playerPassword.clear();
+    m_passwordInputActive = false;
+
+    m_skinLookupDone = false;
+    m_previewSkinId.reset();
 }
 
 MainMenu::MenuLayout MainMenu::computeLayout(
@@ -93,6 +191,160 @@ MainMenu::MenuLayout MainMenu::computeLayout(
     layout.dialogTop =
         layout.dialogY - layout.dialogHeight * 0.5f;
 
+    // ------------------------------------------------------------
+// Панель игрока: цвет + фиксированный блок полей
+// ------------------------------------------------------------
+
+    const float playerInfoY =
+        layout.dialogTop + 45.0f;
+
+    const float inputGroupGap = 8.0f;
+    const float fieldsGap = 8.0f;
+
+    layout.playerFieldsBlockWidth = 550.0f;
+
+    layout.nameInputHeight = 38.0f;
+    layout.passwordInputHeight = 38.0f;
+
+    layout.colorSelectorWidth = 48.0f;
+    layout.colorSelectorHeight = 48.0f;
+
+    // Вся группа имеет неизменную ширину.
+    const float inputGroupWidth =
+        layout.colorSelectorWidth +
+        inputGroupGap +
+        layout.playerFieldsBlockWidth;
+
+    const float inputGroupLeft =
+        layout.dialogLeft + 50.0f;
+
+    // Кнопка выбора цвета.
+    layout.colorSelectorX =
+        inputGroupLeft +
+        layout.colorSelectorWidth * 0.5f;
+
+    layout.colorSelectorY = playerInfoY;
+
+    layout.colorSampleSize = 38.0f;
+    layout.colorSampleX = layout.colorSelectorX;
+    layout.colorSampleY = layout.colorSelectorY;
+
+    // ------------------------------------------------------------
+// Геометрия Nick / Password / CH password
+// ------------------------------------------------------------
+
+    const bool isClanhouseSelected =
+        menuState.selectedModeIndex >= 0 &&
+        menuState.selectedModeIndex <
+        static_cast<int>(gameModes.size()) &&
+        gameModes[menuState.selectedModeIndex].id == "CLANHOUSE";
+
+    // Левый край блока полей.
+    const float fieldsLeft =
+        inputGroupLeft +
+        layout.colorSelectorWidth +
+        inputGroupGap;
+
+    // Количество отображаемых полей.
+    const int fieldCount =
+        1 +
+        (m_passwordInputVisible ? 1 : 0) +
+        (isClanhouseSelected ? 1 : 0);
+
+    // Все поля имеют одинаковую ширину.
+    const float totalFieldsGap =
+        static_cast<float>(fieldCount - 1) * fieldsGap;
+
+    const float fieldWidth =
+        (layout.playerFieldsBlockWidth - totalFieldsGap) /
+        static_cast<float>(fieldCount);
+
+    // ------------------------------------------------------------
+    // Nick
+    // ------------------------------------------------------------
+
+    layout.nameInputWidth = fieldWidth;
+    layout.nameInputHeight = 38.0f;
+
+    layout.nameInputX =
+        fieldsLeft + fieldWidth * 0.5f;
+
+    layout.nameInputY = playerInfoY;
+
+    layout.nameInputTextX =
+        layout.nameInputX -
+        fieldWidth * 0.5f +
+        14.0f;
+
+    // ------------------------------------------------------------
+    // Обычный Password
+    // ------------------------------------------------------------
+
+    layout.passwordInputHeight = 38.0f;
+
+    if (m_passwordInputVisible)
+    {
+        layout.passwordInputWidth = fieldWidth;
+
+        layout.passwordInputX =
+            fieldsLeft +
+            fieldWidth +
+            fieldsGap +
+            fieldWidth * 0.5f;
+
+        layout.passwordInputY = playerInfoY;
+
+        layout.passwordInputTextX =
+            layout.passwordInputX -
+            fieldWidth * 0.5f +
+            14.0f;
+    }
+    else
+    {
+        layout.passwordInputWidth = 0.0f;
+        layout.passwordInputX = 0.0f;
+        layout.passwordInputY = playerInfoY;
+        layout.passwordInputTextX = 0.0f;
+    }
+
+    // ------------------------------------------------------------
+    // CH password — только для ClanHouse
+    // ------------------------------------------------------------
+
+    layout.chPasswordInputHeight = 38.0f;
+
+    if (isClanhouseSelected)
+    {
+        const int chPasswordIndex =
+            m_passwordInputVisible ? 2 : 1;
+
+        layout.chPasswordInputWidth = fieldWidth;
+
+        layout.chPasswordInputX =
+            fieldsLeft +
+            static_cast<float>(chPasswordIndex) *
+            (fieldWidth + fieldsGap) +
+            fieldWidth * 0.5f;
+
+        layout.chPasswordInputY = playerInfoY;
+
+        layout.chPasswordInputTextX =
+            layout.chPasswordInputX -
+            fieldWidth * 0.5f +
+            14.0f;
+    }
+    else
+    {
+        layout.chPasswordInputWidth = 0.0f;
+        layout.chPasswordInputX = 0.0f;
+        layout.chPasswordInputY = playerInfoY;
+        layout.chPasswordInputTextX = 0.0f;
+    }
+
+    // ------------------------------------------------------------
+    // Игровые режимы
+    // ------------------------------------------------------------
+
     layout.modeButtonWidth = 140.0f;
     layout.modeButtonHeight = 35.0f;
     layout.modeButtonGap = 3.0f;
@@ -100,24 +352,29 @@ MainMenu::MenuLayout MainMenu::computeLayout(
     layout.modeIconSize = 26.0f;
     layout.modeIconGap = 6.0f;
 
-    layout.serverListWidth = 400.0f;
-    layout.serverRowHeight = 34.0f;
-    layout.serverListGap = 4.0f;
-    layout.serverVisibleRows = 20;
-
     layout.modesLeftX =
         layout.dialogLeft + 155.0f;
 
     layout.modesTopY =
         layout.dialogTop + 100.0f;
 
-    layout.serversX = layout.dialogLeft + 450.0f;
+    // ------------------------------------------------------------
+    // Список серверов
+    // ------------------------------------------------------------
+
+    layout.serverListWidth = 400.0f;
+    layout.serverRowHeight = 34.0f;
+    layout.serverListGap = 4.0f;
+    layout.serverVisibleRows = 20;
+
+    layout.serversX =
+        layout.dialogLeft + 450.0f;
 
     layout.serversY =
         layout.modesTopY - 13.0f;
 
     layout.serverPaddingX = 12.0f;
-    layout.serverPaddingY = 15.0f;
+    layout.serverPaddingY = 17.0f;
 
     layout.serverTextX =
         layout.serversX -
@@ -127,11 +384,18 @@ MainMenu::MenuLayout MainMenu::computeLayout(
     layout.serverButtonWidth = 350.0f;
     layout.serverButtonHeight = 82.0f;
 
-    layout.playButtonWidth = 113.0f;
+    // ------------------------------------------------------------
+    // Кнопки Play / Spectate
+    // ------------------------------------------------------------
+
+    layout.playButtonWidth = 200.0f;
     layout.playButtonHeight = 40.0f;
 
-    layout.spectateButtonWidth = layout.playButtonWidth;
-    layout.spectateButtonHeight = layout.playButtonHeight;
+    layout.spectateButtonWidth =
+        layout.playButtonWidth;
+
+    layout.spectateButtonHeight =
+        layout.playButtonHeight;
 
     layout.actionButtonGap = 10.0f;
 
@@ -240,6 +504,11 @@ void MainMenu::moveSelectionDown(
             );
 }
 
+const std::string& MainMenu::chPassword() const
+{
+    return m_chPassword;
+}
+
 void MainMenu::moveSelectionUp()
 {
     if (menuState.visibleServerIndices.empty())
@@ -271,6 +540,72 @@ void MainMenu::moveSelectionUp()
             );
 }
 
+void MainMenu::appendNicknameText(std::string_view text)
+{
+    if (!m_nicknameInputActive || text.empty())
+        return;
+
+    constexpr std::size_t maxNicknameLength = 15;
+
+    const std::size_t currentLength =
+        utf8CharacterCount(m_previewNickname);
+
+    if (currentLength >= maxNicknameLength)
+        return;
+
+    const std::string textToAppend = utf8Prefix(
+        text,
+        maxNicknameLength - currentLength
+    );
+
+    if (textToAppend.empty())
+        return;
+
+    m_previewNickname += textToAppend;
+
+    // Ник изменился — старый пароль больше не используем.
+    m_playerPassword.clear();
+    m_passwordInputActive = false;
+
+    // Обновляем предпросмотр скина.
+    m_skinLookupDone = false;
+    m_previewSkinId.reset();
+}
+
+void MainMenu::backspaceNickname()
+{
+    if (!m_nicknameInputActive || m_previewNickname.empty())
+        return;
+
+    std::size_t lastCharacter =
+        m_previewNickname.size() - 1;
+
+    while (
+        lastCharacter > 0 &&
+        isUtf8Continuation(
+            static_cast<unsigned char>(
+                m_previewNickname[lastCharacter]
+                ))
+        )
+    {
+        --lastCharacter;
+    }
+
+    m_previewNickname.resize(lastCharacter);
+
+    // Ник изменился — очищаем пароль предыдущего ника.
+    m_playerPassword.clear();
+    m_passwordInputActive = false;
+
+    m_skinLookupDone = false;
+    m_previewSkinId.reset();
+}
+
+void MainMenu::finishNicknameEditing()
+{
+    m_nicknameInputActive = false;
+}
+
 void MainMenu::handleMouseClick(
     float mouseX,
     float mouseY,
@@ -282,8 +617,133 @@ void MainMenu::handleMouseClick(
 {
     (void)serverList;
 
+    refreshPasswordVisibility();
+
     const MenuLayout layout =
         computeLayout(screenW, screenH);
+
+    // ------------------------------------------------------------
+    // Фокус полей Nick / Password / CH password
+    // ------------------------------------------------------------
+
+    const bool isClanhouseSelected =
+        menuState.selectedModeIndex >= 0 &&
+        menuState.selectedModeIndex <
+        static_cast<int>(gameModes.size()) &&
+        gameModes[menuState.selectedModeIndex].id == "CLANHOUSE";
+
+    // ------------------------------------------------------------
+    // CH password — только для ClanHouse
+    // ------------------------------------------------------------
+
+    if (isClanhouseSelected)
+    {
+        const float chPasswordLeft =
+            layout.chPasswordInputX -
+            layout.chPasswordInputWidth * 0.5f;
+
+        const float chPasswordRight =
+            layout.chPasswordInputX +
+            layout.chPasswordInputWidth * 0.5f;
+
+        const float chPasswordTop =
+            layout.chPasswordInputY -
+            layout.chPasswordInputHeight * 0.5f;
+
+        const float chPasswordBottom =
+            layout.chPasswordInputY +
+            layout.chPasswordInputHeight * 0.5f;
+
+        if (
+            mouseX >= chPasswordLeft &&
+            mouseX <= chPasswordRight &&
+            mouseY >= chPasswordTop &&
+            mouseY <= chPasswordBottom
+            )
+        {
+            m_nicknameInputActive = false;
+            m_passwordInputActive = false;
+            m_chPasswordInputActive = true;
+            return;
+        }
+    }
+
+    // ------------------------------------------------------------
+    // Обычный Password
+    // ------------------------------------------------------------
+
+    if (m_passwordInputVisible)
+    {
+        const float passwordLeft =
+            layout.passwordInputX -
+            layout.passwordInputWidth * 0.5f;
+
+        const float passwordRight =
+            layout.passwordInputX +
+            layout.passwordInputWidth * 0.5f;
+
+        const float passwordTop =
+            layout.passwordInputY -
+            layout.passwordInputHeight * 0.5f;
+
+        const float passwordBottom =
+            layout.passwordInputY +
+            layout.passwordInputHeight * 0.5f;
+
+        if (
+            mouseX >= passwordLeft &&
+            mouseX <= passwordRight &&
+            mouseY >= passwordTop &&
+            mouseY <= passwordBottom
+            )
+        {
+            m_nicknameInputActive = false;
+            m_chPasswordInputActive = false;
+            m_passwordInputActive = true;
+            return;
+        }
+    }
+
+    // ------------------------------------------------------------
+    // Nick
+    // ------------------------------------------------------------
+
+    const float nickLeft =
+        layout.nameInputX -
+        layout.nameInputWidth * 0.5f;
+
+    const float nickRight =
+        layout.nameInputX +
+        layout.nameInputWidth * 0.5f;
+
+    const float nickTop =
+        layout.nameInputY -
+        layout.nameInputHeight * 0.5f;
+
+    const float nickBottom =
+        layout.nameInputY +
+        layout.nameInputHeight * 0.5f;
+
+    if (
+        mouseX >= nickLeft &&
+        mouseX <= nickRight &&
+        mouseY >= nickTop &&
+        mouseY <= nickBottom
+        )
+    {
+        m_passwordInputActive = false;
+        m_chPasswordInputActive = false;
+        m_nicknameInputActive = true;
+        return;
+    }
+
+    // ------------------------------------------------------------
+    // Клик вне полей — снять фокус
+    // ------------------------------------------------------------
+
+    m_nicknameInputActive = false;
+    m_passwordInputActive = false;
+    m_chPasswordInputActive = false;
 
     // ------------------------------------------------------------
     // Режимы
@@ -360,6 +820,31 @@ void MainMenu::handleMouseClick(
     const float serverListHeight =
         serverListBottom -
         serverListTop;
+
+    const float scissorLeft =
+        layout.serversX -
+        layout.serverListWidth * 0.5f;
+
+    const float scissorRight =
+        layout.serversX +
+        layout.serverListWidth * 0.5f;
+
+    const float scissorTop =
+        serverListTop;
+
+    const float scissorBottom =
+        serverListTop +
+        serverListHeight;
+
+    if (
+        mouseX < scissorLeft ||
+        mouseX > scissorRight ||
+        mouseY < scissorTop ||
+        mouseY > scissorBottom
+        )
+    {
+        return;
+    }
 
     const int firstRow =
         static_cast<int>(
@@ -533,14 +1018,10 @@ void MainMenu::handleMouseClick(
             const size_t serverIndex =
                 menuState.visibleServerIndices[row];
 
-            const bool wasAlreadySelected =
-                menuState.selectedServerIndex ==
-                static_cast<int>(serverIndex);
-
             menuState.selectedServerIndex =
                 static_cast<int>(serverIndex);
 
-            if (doubleClick || wasAlreadySelected)
+            if (doubleClick)
             {
                 menuState.joinMode =
                     MenuState::JoinMode::Play;
@@ -925,16 +1406,30 @@ std::string MainMenu::selectedServerUrl(
     const auto& chosen =
         serverList[menuState.selectedServerIndex];
 
-    const size_t colonPos =
-        chosen.address.find(':');
+    std::string gateway;
 
-    if (colonPos == std::string::npos)
+    switch (chosen.dataLoc)
+    {
+    case 1:
+        gateway = "game900";
+        break;
+
+    case 2:
+        gateway = "game903";
+        break;
+
+    case 3:
+        gateway = "game906";
+        break;
+
+    default:
         return {};
+    }
 
-    const std::string host =
-        chosen.address.substr(0, colonPos);
-
-    return "wss://" + host + ":443";
+    return "ws://" +
+        gateway +
+        ".petridish.pw/" +
+        chosen.id;
 }
 
 MenuState& MainMenu::state()
@@ -954,6 +1449,8 @@ void MainMenu::draw(
     float mouseY
 )
 {
+    refreshPasswordVisibility();
+
     const MenuLayout layout =
         computeLayout(screenW, screenH);
 
@@ -970,19 +1467,565 @@ void MainMenu::draw(
         20.0f,
         20.0f,
         20.0f,
-        29.0f / 255.0f,
-        28.0f / 255.0f,
+
+        // Фон — #1A1B21
+        26.0f / 255.0f,
+        27.0f / 255.0f,
         33.0f / 255.0f,
         1.0f,
-        0.0f,
-        0.0f,
-        0.0f,
-        0.0f,
-        0.0f,
+
+        // Более светлая сине-серая рамка
+        85.0f / 255.0f,
+        101.0f / 255.0f,
+        124.0f / 255.0f,
+        0.60f,
+
+        // Толщина границы
+        1.0f,
+
         screenW,
         screenH
     );
     
+    // ------------------------------------------------------------
+    // Выбор цвета / предпросмотр скина
+    // ------------------------------------------------------------
+
+    constexpr float previewRingExtra = 9.0f;
+
+    constexpr float previewR = 51.0f / 255.0f;
+    constexpr float previewG = 153.0f / 255.0f;
+    constexpr float previewB = 1.0f;
+
+    const float ringSize =
+        layout.colorSampleSize + previewRingExtra;
+
+    // Внешний круг.
+    uiPanel.draw(
+        layout.colorSelectorX,
+        layout.colorSelectorY,
+        ringSize,
+        ringSize,
+        ringSize * 0.5f,
+
+        previewR,
+        previewG,
+        previewB,
+        1.0f,
+
+        0.0f,
+        0.0f,
+        0.0f,
+        0.0f,
+
+        0.0f,
+
+        screenW,
+        screenH
+    );
+
+    // Внутренний круг — временный вариант без загруженного скина.
+    uiPanel.draw(
+        layout.colorSampleX,
+        layout.colorSampleY,
+        layout.colorSampleSize,
+        layout.colorSampleSize,
+        layout.colorSampleSize * 0.5f,
+
+        previewR,
+        previewG,
+        previewB,
+        1.0f,
+
+        0.0f,
+        0.0f,
+        0.0f,
+        0.0f,
+
+        0.0f,
+
+        screenW,
+        screenH
+    );
+
+    // ------------------------------------------------------------
+    // Поиск skinId
+    // ------------------------------------------------------------
+
+    if (userSkinDatabase.isLoaded())
+    {
+        if (!m_skinLookupDone ||
+            m_lastSkinLookupNickname != m_previewNickname)
+        {
+            m_lastSkinLookupNickname =
+                m_previewNickname;
+
+            m_previewSkinId =
+                userSkinDatabase.findSkinId(
+                    m_previewNickname
+                );
+
+            m_skinLookupDone = true;
+        }
+    }
+
+    // ------------------------------------------------------------
+    // Получение текстуры
+    // ------------------------------------------------------------
+
+    GLuint previewSkinTexture = 0;
+
+    if (m_previewSkinId.has_value())
+    {
+        previewSkinTexture =
+            skinManager.getTexture(*m_previewSkinId);
+    }
+
+    // ------------------------------------------------------------
+    // Отрисовка круглого скина
+    // ------------------------------------------------------------
+
+    if (previewSkinTexture != 0)
+    {
+        skinShader.use();
+
+        skinShader.setVec2(
+            m_uSkinCenter,
+            layout.colorSampleX,
+            layout.colorSampleY
+        );
+
+        skinShader.setFloat(
+            m_uSkinRadius,
+            layout.colorSampleSize * 0.5f
+        );
+
+        // SkinShader использует систему экранных координат.
+        // Смещением камеры переносим центр координат в центр окна.
+        skinShader.setVec2(
+            m_uSkinCameraPos,
+            screenW * 0.5f,
+            screenH * 0.5f
+        );
+
+        skinShader.setFloat(
+            m_uSkinZoom,
+            1.0f
+        );
+
+        skinShader.setVec2(
+            m_uSkinScreenSize,
+            screenW,
+            screenH
+        );
+
+        glActiveTexture(GL_TEXTURE0);
+
+        glBindTexture(
+            GL_TEXTURE_2D,
+            previewSkinTexture
+        );
+
+        skinShader.setInt(
+            m_uSkinTexture,
+            0
+        );
+
+        skinMesh.draw();
+
+        glBindTexture(GL_TEXTURE_2D, 0);
+    }
+
+
+    // ------------------------------------------------------------
+    // Поля игрока — единый премиальный стиль
+    // ------------------------------------------------------------
+
+    const auto drawPlayerInputField =
+        [&](float x,
+            float y,
+            float width,
+            float height,
+            bool hovered,
+            bool focused)
+        {
+            // Тёмная поверхность поля.
+            float bgR = 23.0f / 255.0f;
+            float bgG = 24.0f / 255.0f;
+            float bgB = 30.0f / 255.0f;
+
+            if (hovered)
+            {
+                bgR = 27.0f / 255.0f;
+                bgG = 29.0f / 255.0f;
+                bgB = 37.0f / 255.0f;
+            }
+
+            if (focused)
+            {
+                bgR = 25.0f / 255.0f;
+                bgG = 29.0f / 255.0f;
+                bgB = 40.0f / 255.0f;
+            }
+
+            // Нейтральная граница.
+            float borderR = 58.0f / 255.0f;
+            float borderG = 61.0f / 255.0f;
+            float borderB = 74.0f / 255.0f;
+            float borderA = 0.70f;
+            float borderWidth = 1.0f;
+
+            if (hovered)
+            {
+                borderR = 85.0f / 255.0f;
+                borderG = 101.0f / 255.0f;
+                borderB = 124.0f / 255.0f;
+                borderA = 0.80f;
+            }
+
+            if (focused)
+            {
+                // Приглушённый синий акцент.
+                borderR = 67.0f / 255.0f;
+                borderG = 94.0f / 255.0f;
+                borderB = 143.0f / 255.0f;
+                borderA = 0.90f;
+                borderWidth = 1.25f;
+            }
+
+            uiPanel.draw(
+                x,
+                y,
+                width,
+                height,
+                10.0f,
+
+                // Фон
+                bgR,
+                bgG,
+                bgB,
+                1.0f,
+
+                // Граница
+                borderR,
+                borderG,
+                borderB,
+                borderA,
+                borderWidth,
+
+                screenW,
+                screenH
+            );
+        };
+
+    // ------------------------------------------------------------
+    // Геометрия и состояния полей
+    // ------------------------------------------------------------
+
+    const float nickLeft =
+        layout.nameInputX -
+        layout.nameInputWidth * 0.5f;
+
+    const float nickRight =
+        layout.nameInputX +
+        layout.nameInputWidth * 0.5f;
+
+    const float nickTop =
+        layout.nameInputY -
+        layout.nameInputHeight * 0.5f;
+
+    const float nickBottom =
+        layout.nameInputY +
+        layout.nameInputHeight * 0.5f;
+
+    const bool playerNickFieldHovered =
+        mouseX >= nickLeft &&
+        mouseX <= nickRight &&
+        mouseY >= nickTop &&
+        mouseY <= nickBottom;
+
+    drawPlayerInputField(
+        layout.nameInputX,
+        layout.nameInputY,
+        layout.nameInputWidth,
+        layout.nameInputHeight,
+        playerNickFieldHovered,
+        m_nicknameInputActive
+    );
+
+    bool playerPasswordFieldHovered = false;
+
+    if (m_passwordInputVisible)
+    {
+        const float passwordLeft =
+            layout.passwordInputX -
+            layout.passwordInputWidth * 0.5f;
+
+        const float passwordRight =
+            layout.passwordInputX +
+            layout.passwordInputWidth * 0.5f;
+
+        const float passwordTop =
+            layout.passwordInputY -
+            layout.passwordInputHeight * 0.5f;
+
+        const float passwordBottom =
+            layout.passwordInputY +
+            layout.passwordInputHeight * 0.5f;
+
+        playerPasswordFieldHovered =
+            mouseX >= passwordLeft &&
+            mouseX <= passwordRight &&
+            mouseY >= passwordTop &&
+            mouseY <= passwordBottom;
+
+        drawPlayerInputField(
+            layout.passwordInputX,
+            layout.passwordInputY,
+            layout.passwordInputWidth,
+            layout.passwordInputHeight,
+            playerPasswordFieldHovered,
+            m_passwordInputActive
+        );
+    }
+
+    // ------------------------------------------------------------
+    // CH password — только для режима ClanHouse
+    // ------------------------------------------------------------
+
+    const bool isClanhouseSelected =
+        menuState.selectedModeIndex >= 0 &&
+        menuState.selectedModeIndex <
+        static_cast<int>(gameModes.size()) &&
+        gameModes[menuState.selectedModeIndex].id == "CLANHOUSE";
+
+    bool playerChPasswordFieldHovered = false;
+
+    if (isClanhouseSelected)
+    {
+        const float chPasswordLeft =
+            layout.chPasswordInputX -
+            layout.chPasswordInputWidth * 0.5f;
+
+        const float chPasswordRight =
+            layout.chPasswordInputX +
+            layout.chPasswordInputWidth * 0.5f;
+
+        const float chPasswordTop =
+            layout.chPasswordInputY -
+            layout.chPasswordInputHeight * 0.5f;
+
+        const float chPasswordBottom =
+            layout.chPasswordInputY +
+            layout.chPasswordInputHeight * 0.5f;
+
+        playerChPasswordFieldHovered =
+            mouseX >= chPasswordLeft &&
+            mouseX <= chPasswordRight &&
+            mouseY >= chPasswordTop &&
+            mouseY <= chPasswordBottom;
+
+        drawPlayerInputField(
+            layout.chPasswordInputX,
+            layout.chPasswordInputY,
+            layout.chPasswordInputWidth,
+            layout.chPasswordInputHeight,
+            playerChPasswordFieldHovered,
+            m_chPasswordInputActive
+        );
+    }
+
+    // ------------------------------------------------------------
+    // Никнейм
+    // ------------------------------------------------------------
+
+    const bool nicknameEmpty =
+        m_previewNickname.empty();
+
+    std::string nicknameDisplay;
+
+    if (m_nicknameInputActive)
+    {
+        nicknameDisplay = m_previewNickname;
+        nicknameDisplay += '|';
+    }
+    else if (nicknameEmpty)
+    {
+        nicknameDisplay = "Nick";
+    }
+    else
+    {
+        nicknameDisplay = m_previewNickname;
+    }
+
+    const float nicknameTextColor =
+        nicknameEmpty && !m_nicknameInputActive
+        ? 150.0f / 255.0f
+        : 225.0f / 255.0f;
+
+    textRenderer.begin();
+
+    textRenderer.addTextLeftAligned(
+        menuFont,
+        nicknameDisplay,
+        layout.nameInputTextX,
+        layout.nameInputY,
+        0.22f
+    );
+
+    textRenderer.end(
+        menuFont,
+        screenW,
+        screenH,
+        nicknameTextColor,
+        nicknameTextColor,
+        nicknameTextColor
+    );
+
+    // ------------------------------------------------------------
+    // Password
+    // ------------------------------------------------------------
+
+    if (m_passwordInputVisible)
+    {
+        std::string passwordDisplay;
+
+        if (m_passwordInputActive)
+        {
+            passwordDisplay = std::string(
+                utf8CharacterCount(m_playerPassword),
+                '*'
+            );
+
+            passwordDisplay += '|';
+        }
+        else if (m_playerPassword.empty())
+        {
+            passwordDisplay = "Password";
+        }
+        else
+        {
+            passwordDisplay = std::string(
+                utf8CharacterCount(m_playerPassword),
+                '*'
+            );
+        }
+
+        const bool passwordPlaceholder =
+            m_playerPassword.empty() &&
+            !m_passwordInputActive;
+
+        const float passwordTextColor =
+            passwordPlaceholder
+            ? 150.0f / 255.0f
+            : 225.0f / 255.0f;
+
+        textRenderer.begin();
+
+        textRenderer.addTextLeftAligned(
+            menuFont,
+            passwordDisplay,
+            layout.passwordInputTextX,
+            layout.passwordInputY,
+            0.22f
+        );
+
+        textRenderer.end(
+            menuFont,
+            screenW,
+            screenH,
+            passwordTextColor,
+            passwordTextColor,
+            passwordTextColor
+        );
+    }
+
+    // ------------------------------------------------------------
+    // CH password — текст и курсор
+    // ------------------------------------------------------------
+
+    if (isClanhouseSelected)
+    {
+        std::string chPasswordDisplay;
+
+        if (m_chPasswordInputActive)
+        {
+            chPasswordDisplay = std::string(
+                utf8CharacterCount(m_chPassword),
+                '*'
+            );
+
+            chPasswordDisplay += '|';
+        }
+        else if (m_chPassword.empty())
+        {
+            chPasswordDisplay = "CH password";
+        }
+        else
+        {
+            chPasswordDisplay = std::string(
+                utf8CharacterCount(m_chPassword),
+                '*'
+            );
+        }
+
+        const bool chPasswordPlaceholder =
+            m_chPassword.empty() &&
+            !m_chPasswordInputActive;
+
+        const float chPasswordTextColor =
+            chPasswordPlaceholder
+            ? 150.0f / 255.0f
+            : 225.0f / 255.0f;
+
+        textRenderer.begin();
+
+        textRenderer.addTextLeftAligned(
+            menuFont,
+            chPasswordDisplay,
+            layout.chPasswordInputTextX,
+            layout.chPasswordInputY,
+            0.22f
+        );
+
+        textRenderer.end(
+            menuFont,
+            screenW,
+            screenH,
+            chPasswordTextColor,
+            chPasswordTextColor,
+            chPasswordTextColor
+        );
+    }
+
+    // ------------------------------------------------------------
+    // Разделитель верхней панели
+    // ------------------------------------------------------------
+
+    uiPanel.draw(
+        layout.dialogX,
+        layout.dialogTop + 77.0f,
+        layout.dialogWidth - 4.0f,
+        2.0f,
+        0.0f,
+
+        // Фон — более заметный сине-серый.
+        85.0f / 255.0f,
+        101.0f / 255.0f,
+        124.0f / 255.0f,
+        0.90f,
+
+        // Без рамки.
+        0.0f,
+        0.0f,
+        0.0f,
+        0.0f,
+
+        0.0f,
+
+        screenW,
+        screenH
+    );
 
     // ------------------------------------------------------------
     // Кнопки режимов
@@ -1065,10 +2108,10 @@ void MainMenu::draw(
                 18.0f,
 
                 // background — rgba(255,108,0,0.20)
-                1.0f,
-                108.0f / 255.0f,
-                0.0f,
-                0.20f,
+                54.0f / 255.0f,
+                127.0f / 255.0f,
+                245.0f / 255.0f,
+                0.16f,
 
                 // border — отсутствует
                 0.0f,
@@ -1236,22 +2279,33 @@ void MainMenu::draw(
 
     textRenderer.begin();
 
+    const float scissorLeft =
+        layout.serversX -
+        layout.serverListWidth * 0.5f;
+
+    const float scissorRight =
+        layout.serversX +
+        layout.serverListWidth * 0.5f;
+
+    const float scissorTop =
+        serverListTop;
+
+    const float scissorBottom =
+        serverListTop +
+        serverListHeight;
+
     glEnable(GL_SCISSOR_TEST);
 
     glScissor(
-        static_cast<GLint>(
-            layout.serversX -
-            layout.serverListWidth * 0.5f
+        static_cast<GLint>(std::floor(scissorLeft)),
+        static_cast<GLint>(std::floor(screenH - scissorBottom)),
+        static_cast<GLsizei>(
+            std::ceil(scissorRight) -
+            std::floor(scissorLeft)
             ),
-        static_cast<GLint>(
-            screenH -
-            (serverListTop + serverListHeight)
-            ),
-        static_cast<GLint>(
-            layout.serverListWidth
-            ),
-        static_cast<GLint>(
-            serverListHeight
+        static_cast<GLsizei>(
+            std::ceil(scissorBottom) -
+            std::floor(scissorTop)
             )
     );
 
@@ -1325,7 +2379,14 @@ void MainMenu::draw(
             y +
             layout.serverRowHeight * 0.5f;
 
+        const bool mouseInsideServerList =
+            mouseX >= scissorLeft &&
+            mouseX <= scissorRight &&
+            mouseY >= scissorTop &&
+            mouseY <= scissorBottom;
+
         const bool hovered =
+            mouseInsideServerList &&
             mouseX >= left &&
             mouseX <= right &&
             mouseY >= top &&
@@ -1344,10 +2405,10 @@ void MainMenu::draw(
                 layout.serverRowHeight,
                 18.0f,
 
-                38.0f / 255.0f,
-                111.0f / 255.0f,
-                255.0f / 255.0f,
-                0.75f,
+                54.0f / 255.0f,
+                127.0f / 255.0f,
+                245.0f / 255.0f,
+                0.25f,
 
                 0.0f,
                 0.0f,
@@ -1459,25 +2520,29 @@ void MainMenu::draw(
         layout.playButtonHeight,
         20.0f,
 
-        // background
+        // Фон: фирменный синий, при наведении светлее.
         playHovered
-        ? 30.0f / 255.0f
-        : 38.0f / 255.0f,
+        ? 67.0f / 255.0f
+        : 54.0f / 255.0f,
         playHovered
-        ? 88.0f / 255.0f
-        : 111.0f / 255.0f,
+        ? 139.0f / 255.0f
+        : 127.0f / 255.0f,
         playHovered
-        ? 204.0f / 255.0f
-        : 255.0f / 255.0f,
+        ? 255.0f / 255.0f
+        : 245.0f / 255.0f,
         1.0f,
 
-        // border — none
-        0.0f,
-        0.0f,
-        0.0f,
-        0.0f,
+        // Тонкая светло-синяя граница.
+        playHovered
+        ? 112.0f / 255.0f
+        : 84.0f / 255.0f,
+        playHovered
+        ? 169.0f / 255.0f
+        : 152.0f / 255.0f,
+        1.0f,
+        playHovered ? 0.70f : 0.45f,
 
-        0.0f,
+        1.0f,
 
         screenW,
         screenH
@@ -1487,20 +2552,50 @@ void MainMenu::draw(
     // Spectate — пока оставляем старый вид
     // ------------------------------------------------------------
 
+    const float spectateLeft =
+        spectateX -
+        layout.spectateButtonWidth * 0.5f;
+
+    const float spectateRight =
+        spectateX +
+        layout.spectateButtonWidth * 0.5f;
+
+    const float spectateTop =
+        spectateY -
+        layout.spectateButtonHeight * 0.5f;
+
+    const float spectateBottom =
+        spectateY +
+        layout.spectateButtonHeight * 0.5f;
+
+    const bool spectateHovered =
+        mouseX >= spectateLeft &&
+        mouseX <= spectateRight &&
+        mouseY >= spectateTop &&
+        mouseY <= spectateBottom;
+
     uiPanel.draw(
         spectateX,
         spectateY,
         layout.spectateButtonWidth,
         layout.spectateButtonHeight,
-        25.0f,
+        20.0f,
 
-        // background — none
-        0.0f,
-        0.0f,
-        0.0f,
-        0.0f,
+        // background
+        spectateHovered
+        ? 38.0f / 255.0f
+        : 0.0f,
+        spectateHovered
+        ? 111.0f / 255.0f
+        : 0.0f,
+        spectateHovered
+        ? 255.0f / 255.0f
+        : 0.0f,
+        spectateHovered
+        ? 1.0f
+        : 0.0f,
 
-        // border — #266fff
+        // border
         38.0f / 255.0f,
         111.0f / 255.0f,
         255.0f / 255.0f,
@@ -1554,9 +2649,9 @@ void MainMenu::draw(
         menuFont,
         screenW,
         screenH,
-        38.0f / 255.0f,
-        111.0f / 255.0f,
-        255.0f / 255.0f
+        spectateHovered ? 1.0f : 38.0f / 255.0f,
+        spectateHovered ? 1.0f : 111.0f / 255.0f,
+        spectateHovered ? 1.0f : 255.0f / 255.0f
     );
 
     // ------------------------------------------------------------
@@ -1718,4 +2813,132 @@ void MainMenu::draw(
         screenH,
         0.776f, 0.776f, 0.776f
     );
+}
+
+void MainMenu::refreshPasswordVisibility()
+{
+    if (!userSkinDatabase.isLoaded())
+        return;
+
+    const bool shouldBeVisible =
+        userSkinDatabase.requiresPassword(m_previewNickname);
+
+    if (shouldBeVisible == m_passwordInputVisible)
+        return;
+
+    m_passwordInputVisible = shouldBeVisible;
+
+    // Если новый ник не требует пароля, очищаем его,
+    // чтобы случайно не отправить старый пароль.
+    if (!shouldBeVisible)
+    {
+        m_passwordInputActive = false;
+        m_playerPassword.clear();
+    }
+}
+
+void MainMenu::appendPasswordText(std::string_view text)
+{
+    if (!m_passwordInputActive || text.empty())
+        return;
+
+    constexpr std::size_t maxPasswordLength = 10;
+
+    const std::size_t currentLength =
+        utf8CharacterCount(m_playerPassword);
+
+    if (currentLength >= maxPasswordLength)
+        return;
+
+    m_playerPassword += utf8Prefix(
+        text,
+        maxPasswordLength - currentLength
+    );
+}
+
+void MainMenu::backspacePassword()
+{
+    if (!m_passwordInputActive || m_playerPassword.empty())
+        return;
+
+    std::size_t lastCharacter =
+        m_playerPassword.size() - 1;
+
+    while (
+        lastCharacter > 0 &&
+        isUtf8Continuation(
+            static_cast<unsigned char>(
+                m_playerPassword[lastCharacter]
+                ))
+        )
+    {
+        --lastCharacter;
+    }
+
+    m_playerPassword.resize(lastCharacter);
+}
+
+void MainMenu::appendTextInput(std::string_view text)
+{
+    if (m_nicknameInputActive)
+    {
+        appendNicknameText(text);
+    }
+    else if (m_passwordInputActive)
+    {
+        appendPasswordText(text);
+    }
+    else if (m_chPasswordInputActive && !text.empty())
+    {
+        constexpr std::size_t maxPasswordLength = 10;
+
+        const std::size_t currentLength =
+            utf8CharacterCount(m_chPassword);
+
+        if (currentLength < maxPasswordLength)
+        {
+            m_chPassword += utf8Prefix(
+                text,
+                maxPasswordLength - currentLength
+            );
+        }
+    }
+}
+
+void MainMenu::backspaceTextInput()
+{
+    if (m_nicknameInputActive)
+    {
+        backspaceNickname();
+    }
+    else if (m_passwordInputActive)
+    {
+        backspacePassword();
+    }
+    else if (m_chPasswordInputActive && !m_chPassword.empty())
+    {
+        std::size_t lastCharacter =
+            m_chPassword.size() - 1;
+
+        while (
+            lastCharacter > 0 &&
+            isUtf8Continuation(
+                static_cast<unsigned char>(
+                    m_chPassword[lastCharacter]
+                    )
+            )
+            )
+        {
+            --lastCharacter;
+        }
+
+        m_chPassword.resize(lastCharacter);
+    }
+}
+
+void MainMenu::finishTextInput()
+{
+    m_nicknameInputActive = false;
+    m_passwordInputActive = false;
+    m_chPasswordInputActive = false;
 }

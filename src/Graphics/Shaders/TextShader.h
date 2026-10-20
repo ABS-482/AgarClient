@@ -2,12 +2,12 @@
 
 namespace TextShader
 {
-    inline constexpr const char* vertex = R"(
-        #version 330 core
+    inline constexpr const char* vertex = R"(#version 330 core
 
         layout (location = 0) in vec2 aPos; // уже в абсолютных экранных пикселях
         layout (location = 1) in vec2 aUV;
         layout (location = 2) in vec3 aColor;
+        layout (location = 3) in float aDepth;
 
         uniform vec2 uScreenSize;
 
@@ -21,14 +21,13 @@ namespace TextShader
                 1.0 - (aPos.y / uScreenSize.y) * 2.0
             );
 
-            gl_Position = vec4(ndc, 0.0, 1.0);
+            gl_Position = vec4(ndc, aDepth, 1.0);
             vUV = aUV;
             vColor = aColor;
         }
     )";
 
-    inline constexpr const char* fragment = R"(
-        #version 330 core
+    inline constexpr const char* fragment = R"(#version 330 core
 
         in vec2 vUV;
         in vec3 vColor;

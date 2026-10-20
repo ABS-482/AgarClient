@@ -2,8 +2,7 @@
 
 namespace RoundedCornersPanelShader
 {
-    inline constexpr const char* vertex = R"(
-        #version 330 core
+    inline constexpr const char* vertex = R"(#version 330 core
 
         layout (location = 0) in vec2 aPos;
 
@@ -28,8 +27,7 @@ namespace RoundedCornersPanelShader
         }
     )";
 
-    inline constexpr const char* fragment = R"(
-        #version 330 core
+    inline constexpr const char* fragment = R"(#version 330 core
 
         in vec2 vLocalPixelPos;
 

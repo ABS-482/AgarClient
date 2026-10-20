@@ -27,8 +27,6 @@ bool AimController::trySendFreshAim(
     camera.screenToWorld(
         input.mouseX,
         input.mouseY,
-        screenW,
-        screenH,
         aimX,
         aimY
     );
@@ -47,7 +45,46 @@ bool AimController::trySendFreshAim(
     if (
         !bypassRateLimit &&
         now - gameState.lastAimSendTime <
-        std::chrono::milliseconds(1)
+        std::chrono::milliseconds(4)
+        )
+    {
+        return false;
+    }
+
+    gameState.lastAimSendTime = now;
+    gameState.aimXOld = aimX;
+    gameState.aimYOld = aimY;
+    gameState.hasAimOld = true;
+
+    network.sendAimPosition(
+        std::floor(aimX),
+        std::floor(aimY)
+    );
+
+    return true;
+}
+
+bool AimController::trySendWorldAim(
+    float aimX,
+    float aimY,
+    bool bypassRateLimit
+)
+{
+    const bool changedEnough =
+        !gameState.hasAimOld ||
+        std::abs(gameState.aimXOld - aimX) >= 0.01f ||
+        std::abs(gameState.aimYOld - aimY) >= 0.01f;
+
+    if (!changedEnough)
+        return false;
+
+    const auto now =
+        std::chrono::steady_clock::now();
+
+    if (
+        !bypassRateLimit &&
+        now - gameState.lastAimSendTime <
+        std::chrono::milliseconds(4)
         )
     {
         return false;

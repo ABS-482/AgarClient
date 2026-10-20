@@ -6,6 +6,9 @@
 
 #include <string>
 #include <mutex>
+#include <atomic>
+#include <chrono>
+#include <cstdint>
 
 enum class ConnectionMode
 {
@@ -71,15 +74,37 @@ public:
     void requestSpawn();
     void sendChat(const std::string& text);
 
+    void setGameMode(
+        uint8_t gameMode
+    )
+    {
+        m_gameMode = gameMode;
+    }
+
+    uint8_t gameMode() const
+    {
+        return m_gameMode;
+    }
+
     bool isConnected() const
     {
         return m_connected;
     }
 
+    bool consumeConnectionFailed();
+
     const std::string& currentUrl() const
     {
         return m_currentUrl;
     }
+
+    int pingMs() const noexcept
+    {
+        return m_pingMs.load(std::memory_order_relaxed);
+    }
+
+    // Вызывается PacketHandler при получении ответа opcode 115.
+    void handlePingResponse(uint32_t hash) noexcept;
 
 private:
     void sendNick();
@@ -89,6 +114,7 @@ private:
     void sendHandshake();
     void sendPacket(uint8_t opcode);
     void sendPlayerPassword();
+    void sendPing();
 
     std::chrono::steady_clock::time_point m_lastChatTime{};
 
@@ -111,9 +137,20 @@ private:
     ConnectionMode m_connectionMode =
         ConnectionMode::Play;
 
+    uint8_t m_gameMode = 0;
+
     PacketHandler& m_handler;
     ix::WebSocket m_webSocket;
 
     bool m_connected = false;
+    bool m_connectionFailed = false;
+    bool m_intentionalDisconnect = false;
+
     std::string m_currentUrl;
+    // Ping
+    std::chrono::steady_clock::time_point m_lastPingAttempt{};
+
+    std::atomic<uint32_t> m_lastPingHash{ 0 };
+    std::atomic<int64_t> m_lastPingSentAtMs{ 0 };
+    std::atomic<int> m_pingMs{ -1 };
 };

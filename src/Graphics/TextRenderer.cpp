@@ -18,15 +18,16 @@ TextRenderer::TextRenderer(Shader& shader)
     glBindVertexArray(m_vao);
     glBindBuffer(GL_ARRAY_BUFFER, m_vbo);
 
+    constexpr GLsizei stride = 8 * sizeof(float);
+
     glVertexAttribPointer(
         0,
         2,
         GL_FLOAT,
         GL_FALSE,
-        7 * sizeof(float),
+        stride,
         (void*)0
     );
-
     glEnableVertexAttribArray(0);
 
     glVertexAttribPointer(
@@ -34,10 +35,9 @@ TextRenderer::TextRenderer(Shader& shader)
         2,
         GL_FLOAT,
         GL_FALSE,
-        7 * sizeof(float),
+        stride,
         (void*)(2 * sizeof(float))
     );
-
     glEnableVertexAttribArray(1);
 
     glVertexAttribPointer(
@@ -45,17 +45,25 @@ TextRenderer::TextRenderer(Shader& shader)
         3,
         GL_FLOAT,
         GL_FALSE,
-        7 * sizeof(float),
+        stride,
         (void*)(4 * sizeof(float))
     );
-
     glEnableVertexAttribArray(2);
+
+    glVertexAttribPointer(
+        3,
+        1,
+        GL_FLOAT,
+        GL_FALSE,
+        stride,
+        (void*)(7 * sizeof(float))
+    );
+    glEnableVertexAttribArray(3);
 
     glBindBuffer(GL_ARRAY_BUFFER, 0);
     glBindVertexArray(0);
 
     m_batch.reserve(4096);
-    m_scratch.reserve(256);
 }
 
 TextRenderer::~TextRenderer()
@@ -73,38 +81,26 @@ void TextRenderer::begin()
 void TextRenderer::addText(
     const Font& font,
     const std::string& text,
-    float screenCenterX, float screenCenterY,
-    float fontScale
+    float screenCenterX,
+    float screenCenterY,
+    float fontScale,
+    float depth,
+    bool cacheLayout
 )
 {
-    m_scratch.clear();
-
-    float width = font.buildQuads(text, 0.0f, 0.0f, m_scratch);
-
-    if (m_scratch.empty())
-        return;
-
-    float offsetX = screenCenterX - (width * fontScale) * 0.5f;
-    float offsetY = screenCenterY + (font.pixelHeight() * fontScale) / 3.0f;
-
-    // Переносим локальные (baseline-относительные) квады в абсолютные
-    // экранные координаты прямо сейчас, на CPU — раз навсегда для этой строки.
-    for (size_t i = 0; i < m_scratch.size(); i += 4)
-    {
-        float localX = m_scratch[i];
-        float localY = m_scratch[i + 1];
-        float u = m_scratch[i + 2];
-        float v = m_scratch[i + 3];
-
-        m_batch.push_back(localX * fontScale + offsetX);
-        m_batch.push_back(localY * fontScale + offsetY);
-        m_batch.push_back(u);
-        m_batch.push_back(v);
-
-        m_batch.push_back(1.0f);
-        m_batch.push_back(1.0f);
-        m_batch.push_back(1.0f);
-    }
+    font.appendTextQuads(
+        text,
+        screenCenterX,
+        screenCenterY,
+        fontScale,
+        1.0f,
+        1.0f,
+        1.0f,
+        depth,
+        true,
+        cacheLayout,
+        m_batch
+    );
 }
 
 void TextRenderer::addTextColored(
@@ -115,56 +111,29 @@ void TextRenderer::addTextColored(
     float fontScale,
     float r,
     float g,
-    float b
+    float b,
+    float depth
 )
 {
-    m_scratch.clear();
-
-    m_hasVertexColors = true;
-    float width =
-        font.buildQuads(
-            text,
-            0.0f,
-            0.0f,
-            m_scratch
-        );
-
-    if (m_scratch.empty())
-        return;
-
-    float offsetX =
-        screenCenterX -
-        (width * fontScale) * 0.5f;
-
-    float offsetY =
-        screenCenterY +
-        (font.pixelHeight() * fontScale) / 3.0f;
-
-    for (size_t i = 0; i < m_scratch.size(); i += 4)
+    if (font.appendTextQuads(
+        text,
+        screenCenterX,
+        screenCenterY,
+        fontScale,
+        r,
+        g,
+        b,
+        depth,
+        true,
+        true,
+        m_batch
+    ))
     {
-        float localX = m_scratch[i];
-        float localY = m_scratch[i + 1];
-        float u = m_scratch[i + 2];
-        float v = m_scratch[i + 3];
-
-        m_batch.push_back(
-            localX * fontScale + offsetX
-        );
-
-        m_batch.push_back(
-            localY * fontScale + offsetY
-        );
-
-        m_batch.push_back(u);
-        m_batch.push_back(v);
-
-        m_batch.push_back(r);
-        m_batch.push_back(g);
-        m_batch.push_back(b);
+        m_hasVertexColors = true;
     }
 }
 
-void TextRenderer::end(
+void TextRenderer::flush(
     const Font& font,
     float screenWidth, float screenHeight,
     float r, float g, float b
@@ -176,20 +145,44 @@ void TextRenderer::end(
     m_shader.use();
 
     m_shader.setInt(m_uAtlas, 0);
-    m_shader.setVec2(m_uScreenSize, screenWidth, screenHeight);
-    m_shader.setVec3(m_uColor, r, g, b);
-    m_shader.setInt(m_uUseVertexColor, 0);
-    m_shader.setVec3(m_uBorderColor, 0.0f, 0.0f, 0.0f);
-    m_shader.setFloat(m_uAlphaMultiplier, 1.0f);
+    m_shader.setVec2(
+        m_uScreenSize,
+        screenWidth,
+        screenHeight
+    );
+
+    m_shader.setVec3(
+        m_uColor,
+        r, g, b
+    );
+
+    m_shader.setVec3(
+        m_uBorderColor,
+        0.0f,
+        0.0f,
+        0.0f
+    );
+
+    m_shader.setFloat(
+        m_uAlphaMultiplier,
+        1.0f
+    );
+
     m_shader.setInt(
         m_uUseVertexColor,
         m_hasVertexColors ? 1 : 0
     );
 
+    font.updateMipmaps();
     glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, font.textureId()); // <- см. ниже про параметр font
+    glBindTexture(
+        GL_TEXTURE_2D,
+        font.textureId()
+    );
+
     glBindVertexArray(m_vao);
     glBindBuffer(GL_ARRAY_BUFFER, m_vbo);
+
     glBufferData(
         GL_ARRAY_BUFFER,
         m_batch.size() * sizeof(float),
@@ -197,45 +190,59 @@ void TextRenderer::end(
         GL_DYNAMIC_DRAW
     );
 
-    glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(m_batch.size() / 7));
+    glDrawArrays(
+        GL_TRIANGLES,
+        0,
+        static_cast<GLsizei>(
+            m_batch.size() / 8
+            )
+    );
 
     glBindVertexArray(0);
     glBindTexture(GL_TEXTURE_2D, 0);
+
+    m_batch.clear();
+    m_hasVertexColors = false;
+}
+
+void TextRenderer::end(
+    const Font& font,
+    float screenWidth, float screenHeight,
+    float r, float g, float b
+)
+{
+    flush(
+        font,
+        screenWidth,
+        screenHeight,
+        r,
+        g,
+        b
+    );
 }
 
 void TextRenderer::addTextLeftAligned(
     const Font& font,
     const std::string& text,
-    float screenLeftX, float screenY,
-    float fontScale
+    float screenLeftX,
+    float screenY,
+    float fontScale,
+    float depth
 )
 {
-    m_scratch.clear();
-
-    font.buildQuads(text, 0.0f, 0.0f, m_scratch);
-
-    if (m_scratch.empty())
-        return;
-
-    float offsetX = screenLeftX; // без вычитания половины ширины — левый край как есть
-    float offsetY = screenY + (font.pixelHeight() * fontScale) / 3.0f;
-
-    for (size_t i = 0; i < m_scratch.size(); i += 4)
-    {
-        float localX = m_scratch[i];
-        float localY = m_scratch[i + 1];
-        float u = m_scratch[i + 2];
-        float v = m_scratch[i + 3];
-
-        m_batch.push_back(localX * fontScale + offsetX);
-        m_batch.push_back(localY * fontScale + offsetY);
-        m_batch.push_back(u);
-        m_batch.push_back(v);
-
-        m_batch.push_back(1.0f);
-        m_batch.push_back(1.0f);
-        m_batch.push_back(1.0f);
-    }
+    font.appendTextQuads(
+        text,
+        screenLeftX,
+        screenY,
+        fontScale,
+        1.0f,
+        1.0f,
+        1.0f,
+        depth,
+        false,
+        true,
+        m_batch
+    );
 }
 
 void TextRenderer::addTextLeftAlignedColored(
@@ -246,48 +253,24 @@ void TextRenderer::addTextLeftAlignedColored(
     float fontScale,
     float r,
     float g,
-    float b
+    float b,
+    float depth
 )
 {
-    m_scratch.clear();
-
-    m_hasVertexColors = true;
-    font.buildQuads(
+    if (font.appendTextQuads(
         text,
-        0.0f,
-        0.0f,
-        m_scratch
-    );
-
-    if (m_scratch.empty())
-        return;
-
-    float offsetX = screenLeftX;
-
-    float offsetY =
-        screenY +
-        (font.pixelHeight() * fontScale) / 3.0f;
-
-    for (size_t i = 0; i < m_scratch.size(); i += 4)
+        screenLeftX,
+        screenY,
+        fontScale,
+        r,
+        g,
+        b,
+        depth,
+        false,
+        true,
+        m_batch
+    ))
     {
-        float localX = m_scratch[i];
-        float localY = m_scratch[i + 1];
-        float u = m_scratch[i + 2];
-        float v = m_scratch[i + 3];
-
-        m_batch.push_back(
-            localX * fontScale + offsetX
-        );
-
-        m_batch.push_back(
-            localY * fontScale + offsetY
-        );
-
-        m_batch.push_back(u);
-        m_batch.push_back(v);
-
-        m_batch.push_back(r);
-        m_batch.push_back(g);
-        m_batch.push_back(b);
+        m_hasVertexColors = true;
     }
 }

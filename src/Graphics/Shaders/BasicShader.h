@@ -2,8 +2,7 @@
 
 namespace BasicShader
 {
-    inline constexpr const char* vertex = R"(
-        #version 330 core
+    inline constexpr const char* vertex = R"(#version 330 core
 
         layout (location = 0) in vec2 aPos;
 
@@ -22,8 +21,7 @@ namespace BasicShader
         }
     )";
 
-    inline constexpr const char* fragment = R"(
-        #version 330 core
+    inline constexpr const char* fragment = R"(#version 330 core
 
         out vec4 FragColor;
 

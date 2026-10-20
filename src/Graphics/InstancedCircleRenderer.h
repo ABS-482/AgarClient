@@ -13,7 +13,7 @@ public:
     InstancedCircleRenderer(const InstancedCircleRenderer&) = delete;
     InstancedCircleRenderer& operator=(const InstancedCircleRenderer&) = delete;
 
-    // instanceData: подряд center.x, center.y, radius, r, g, b — 6 float на инстанс.
+    // instanceData: center.x, center.y, radius, r, g, b, depth — 7 float на инстанс.
     void draw(const float* instanceData, size_t instanceCount);
 
 private:

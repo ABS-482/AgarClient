@@ -26,7 +26,9 @@ void PlayerHUD::draw(
     const std::unordered_map<uint32_t, RenderState>& renderStates,
     float screenW,
     float screenH,
-    double fps
+    double fps,
+    int pingMs,
+    const std::string& serverInfoText
 )
 {
     if (!ownedIds.empty())
@@ -107,7 +109,7 @@ void PlayerHUD::draw(
             panelCenterY,
             panelWidth,
             panelHeight,
-            20.0f,
+            10.0f,
 
             // background
             0.0f,
@@ -137,14 +139,24 @@ void PlayerHUD::draw(
     }
 
     // --------------------------------------------------------
-    // FPS + Ping
-    // --------------------------------------------------------
+// FPS + Ping
+// --------------------------------------------------------
 
     std::ostringstream performanceStream;
 
     performanceStream
         << "FPS: "
-        << static_cast<int>(fps + 0.5);
+        << static_cast<int>(fps + 0.5)
+        << " Ping: ";
+
+    if (pingMs >= 0)
+    {
+        performanceStream << pingMs << " ms";
+    }
+    else
+    {
+        performanceStream << "--";
+    }
 
     const std::string performanceText =
         performanceStream.str();
@@ -159,38 +171,47 @@ void PlayerHUD::draw(
     const float performancePanelWidth =
         performanceTextWidth + 10.0f;
 
-    const float performancePanelHeight =
-        34.0f;
+    constexpr float performancePanelHeight = 34.0f;
 
     const float performancePanelCenterX =
         screenW -
         10.0f -
         performancePanelWidth * 0.5f;
 
+    // Немного поднимаем панель, чтобы освободить место
+    // для информации о сервере под ней.
     const float performancePanelCenterY =
         screenH -
         10.0f -
         22.0f -
         10.0f +
-        performancePanelHeight * 0.5f;
+        performancePanelHeight * 0.5f -
+        16.0f;
+
+    // --------------------------------------------------------
+    // Панель FPS + Ping
+    // --------------------------------------------------------
 
     uiPanel.draw(
         performancePanelCenterX,
         performancePanelCenterY,
         performancePanelWidth,
         performancePanelHeight,
-        0.0f,
+        10.0f,
 
-        0.1647f,
-        0.3922f,
-        0.5882f,
-        0.5f,
+        // Background
+        0.0f,
+        0.0f,
+        0.0f,
+        0.30f,
 
-        0.0f,
-        0.0f,
-        0.0f,
-        0.0f,
-        0.0f,
+        // Border
+        1.0f,
+        1.0f,
+        1.0f,
+        0.15f,
+
+        1.0f,
 
         screenW,
         screenH
@@ -205,4 +226,58 @@ void PlayerHUD::draw(
         performancePanelCenterY,
         performanceFontScale
     );
+
+    // --------------------------------------------------------
+    // Информация о сервере под FPS + Ping
+    // --------------------------------------------------------
+
+    if (!serverInfoText.empty())
+    {
+        constexpr float marginRight = 10.0f;
+        constexpr float serverInfoFontScaleDefault =
+            15.0f / 70.0f;
+
+        float serverInfoFontScale =
+            serverInfoFontScaleDefault;
+
+        float serverInfoTextWidth =
+            font.measureWidth(serverInfoText) *
+            serverInfoFontScale;
+
+        // Уменьшаем текст, если он не помещается по ширине.
+        const float availableWidth =
+            screenW - marginRight * 2.0f;
+
+        if (serverInfoTextWidth > availableWidth &&
+            serverInfoTextWidth > 0.0f)
+        {
+            serverInfoFontScale *=
+                availableWidth / serverInfoTextWidth;
+
+            serverInfoTextWidth =
+                font.measureWidth(serverInfoText) *
+                serverInfoFontScale;
+        }
+
+        const float serverInfoX =
+            screenW -
+            marginRight -
+            serverInfoTextWidth;
+
+        const float serverInfoY =
+            performancePanelCenterY +
+            performancePanelHeight * 0.5f +
+            13.0f;
+
+        textRenderer.addTextLeftAlignedColored(
+            font,
+            serverInfoText,
+            serverInfoX,
+            serverInfoY,
+            serverInfoFontScale,
+            1.0f,
+            1.0f,
+            1.0f
+        );
+    }
 }

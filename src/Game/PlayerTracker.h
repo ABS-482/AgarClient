@@ -13,7 +13,6 @@ class PlayerTracker
 {
 public:
     PlayerTracker(
-        Camera& camera,
         GameState& gameState
     );
 
@@ -24,6 +23,5 @@ public:
     );
 
 private:
-    Camera& camera;
     GameState& gameState;
 };

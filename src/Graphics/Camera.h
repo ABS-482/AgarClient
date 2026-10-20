@@ -1,75 +1,49 @@
 #pragma once
 
-#include "../Game/Blob.h"
+#include <vector>
 
-#include <cstdint>
-#include <unordered_map>
+// Минимум, что камере нужно знать про клетки игрока.
+// Подставь сюда поля из своего Blob (x, y, size).
+struct CameraCell
+{
+    float x = 0.0f;
+    float y = 0.0f;
+    float size = 0.0f;
+};
 
 class Camera
 {
 public:
-    float x = 0.0f;
-    float y = 0.0f;
+    // --- Поля 1:1 с JS ---
+    float width = 1920.0f;   // win.innerWidth
+    float height = 1080.0f;   // win.innerHeight
 
-    float zoom = 1.5f;
-    float targetZoom = 1.5f;
-    float zoomScale = 1.0f;
-    float sizeZoomFactor = 1.0f;
+    float zoom = 1.0f;     // пользовательский зум (колесо мыши)
+    float ratio = 1.0f;     // итоговый масштаб рисования
+    float chunk = 1.0f;     // последний ratio, пока игрок жив
 
-    float cameraScale = 1.0f;
-    float targetJavaZoom = 1.5f;
-    float targetX = 0.0f;
-    float targetY = 0.0f;
+    float offsetX = 0.0f;     // позиция камеры (сглаженная)
+    float offsetY = 0.0f;
+    float middleX = 0.0f;     // целевая точка (центр масс клеток)
+    float middleY = 0.0f;
 
-    float minZoomScale = 0.2f;
-    float maxZoomScale = 1.5f;
-    float baseZoom = 1.5f;
-    float minZoom = 1.0f;
-    float maxZoom = 20.0f;
+    bool isSpectating = false;
 
-    float viewportWidth = 608.0f;
-    float viewportHeight = 608.0f;
+    // --- Функции 1:1 с JS ---
+    void  onResize(float newWidth, float newHeight);
+    float unitRatio() const;
+    void  updateRatio(const std::vector<CameraCell>& cells, float dt);
 
-    bool hasBounds = false;
-    float boundsMinX = 0.0f;
-    float boundsMinY = 0.0f;
-    float boundsMaxX = 0.0f;
-    float boundsMaxY = 0.0f;
+    // Камерная часть draw(): вызывать каждый кадр ПОСЛЕ updatePos() клеток.
+    void  update(const std::vector<CameraCell>& cells, float dt);
 
-    void setViewport(float width, float height);
+    // Колесо мыши (замени на формулу из JS, если там другая)
+    void  zoomBy(float wheelDelta);
 
-    void setBounds(float minX, float minY, float maxX, float maxY);
-
-    void update(float deltaTime);
-    void setManualTarget(float worldX, float worldY);
-    void zoomBy(float wheelDelta);
-    void setTargetJavaZoom(float value);
-    void updateJavaZoom(float deltaTime);
-
-    // Задаёт zoom мгновенно, минуя плавный lerp — удобно для стартовой
-    // инициализации, когда доезжать до значения кадр за кадром не нужно.
-    void setZoomImmediate(float desiredZoom);
-
-    void snapTowardsTarget(float deltaTime, float halfLifeSeconds);
-
-    void updateZoomOnly(float deltaTime);
-
-    void setSizeZoomFactor(float factor) { sizeZoomFactor = factor; }
-
-    void screenToWorld(
-        float screenX, float screenY,
-        float screenWidth, float screenHeight,
-        float& outWorldX, float& outWorldY
-    ) const;
-
-    void worldToScreen(
-        float worldX, float worldY,
-        float screenWidth, float screenHeight,
-        float& outScreenX, float& outScreenY
-    ) const;
-
-    void setZoomLimits(
-        float minScale, float maxScale,
-        float minAbsolute, float maxAbsolute
-    );
+    void screenToWorld(float screenX, float screenY,
+        float& outWorldX, float& outWorldY) const;
+    void worldToScreen(float worldX, float worldY,
+        float& outScreenX, float& outScreenY) const;
+private:
+    void clampZoomInGame();
 };
