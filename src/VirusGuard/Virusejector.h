@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <functional>
 #include <iterator>
+#include <limits>
 #include <optional>
 #include <unordered_map>
 #include <utility>
@@ -23,7 +24,14 @@ namespace virus_ejector {
     inline float len(Vec2 a) { return std::sqrt(dot(a, a)); }
     inline double posmod(double x, double m) { x = std::fmod(x, m); return x < 0 ? x + m : x; }
 
-    struct Body { uint32_t id = 0; Vec2 pos; float radius = 0.f; };
+    struct Body {
+        uint32_t id = 0;
+        Vec2 pos;
+        float radius = 0.f;
+        // Время последнего измерения координат на часах steady_clock, секунды.
+        // Отрицательное значение означает использовать snapshotTime из onSnapshot().
+        double observedAt = -1.0;
+    };
 
     // ---------------------------------------------------------------- скорость по снимкам
     // Как в b/d.java: V = (P1 - P0) / dt, dt = разница времён снимков.
@@ -57,9 +65,11 @@ namespace virus_ejector {
             tr.pos = pos; tr.t = t;
         }
 
-        bool velocity(uint32_t id, Vec2& out) const {
+        // Не используем скорость, если конкретная сущность давно не обновлялась.
+        bool velocity(uint32_t id, Vec2& out, double now) const {
             auto it = tracks_.find(id);
             if (it == tracks_.end() || !it->second.hasVel) return false;
+            if (now < it->second.t || now - it->second.t > maxGap_) return false;
             out = it->second.vel;
             return true;
         }
@@ -84,6 +94,10 @@ namespace virus_ejector {
         float massRatio = 1.2f;    // правило поедания (как в клиенте): Rc² >= 1.2·Rv²
         float hitRadiusK = 0.4f;    //                                   d <= Rc − 0.4·Rv
         float hitMargin = 0.f;     // запас к радиусу попадания
+
+        // На первом этапе оставляем false: рассчитываем угрозы, но ничего не отправляем.
+        // Включать только после интеграции приоритета aim и ручного ввода в main.cpp.
+        bool autoFire = false;
     };
 
     struct Threat {
@@ -103,14 +117,27 @@ namespace virus_ejector {
             : cfg_(cfg), sendMove_(std::move(sendMove)), sendEject_(std::move(sendEject)) {
         }
 
-        // Вызывать на каждый снимок мира.
-        // snapshotTime — время снимка (для dt), arrivalTime — когда он пришёл (клиентские часы, для возраста/фазы тика).
-        // pos вирусов — серверная (целевая) позиция; клеток — как решишь (в Java для клеток брался render c,d).
+        // Передавать полный текущий набор наблюдаемых сущностей при каждом обновлении.
+        // snapshotTime — резервная временная отметка для Body без observedAt.
+        // arrivalTime — время прихода последнего изменившегося World snapshot на steady_clock.
+        // observedAt задаёт время координат конкретной сущности; для собственных клеток
+        // можно передавать текущую render-позицию с observedAt = now.
         void onSnapshot(double snapshotTime, double arrivalTime,
             std::vector<Body> viruses, std::vector<Body> ownCells) {
             virusTracks_.begin(); cellTracks_.begin();
-            for (const Body& v : viruses)  virusTracks_.observe(v.id, v.pos, snapshotTime);
-            for (const Body& c : ownCells) cellTracks_.observe(c.id, c.pos, snapshotTime);
+            for (const Body& v : viruses)
+                virusTracks_.observe(
+                    v.id,
+                    v.pos,
+                    v.observedAt >= 0.0 ? v.observedAt : snapshotTime
+                );
+
+            for (const Body& c : ownCells)
+                cellTracks_.observe(
+                    c.id,
+                    c.pos,
+                    c.observedAt >= 0.0 ? c.observedAt : snapshotTime
+                );
             virusTracks_.end(); cellTracks_.end();
             viruses_ = std::move(viruses);
             cells_ = std::move(ownCells);
@@ -123,25 +150,36 @@ namespace virus_ejector {
         // В фазе Hold курсор пользователя на сервер не пересылать (иначе перебьёт aim).
         bool shouldForwardUserCursor() const { return phase_ == Phase::Idle; }
 
-        // Вызывать каждый кадр. rtt — сглаженный пинг, с.
+        // Вызывать каждый кадр. now и rtt — секунды на шкале steady_clock.
+        // По умолчанию метод только обновляет latestThreat(); сетевые команды не отправляются.
         void update(double now, double rtt) {
-            if (phase_ == Phase::Hold) {
+            if (cfg_.autoFire && phase_ == Phase::Hold) {
                 if (now >= restoreAt_) {
-                    sendMove_(userCursor_);              // вернуть курсор уже после тика, в котором обработан eject
+                    sendMove_(userCursor_); // вернуть курсор после тика обработки eject
                     phase_ = Phase::Idle;
                 }
+                latestThreat_.reset();
                 return;
             }
-            if (now - lastShot_ < cfg_.shotInterval) return;
 
-            auto th = findThreat(now, rtt);
-            if (!th) return;
+            latestThreat_ = findThreat(now, rtt);
 
-            sendMove_(th->aim);                          // 1) курсор
-            sendEject_();                                // 2) eject в том же тике
+            // Диагностический режим — только прогноз, без управления и выброса массы.
+            if (!cfg_.autoFire || !latestThreat_)
+                return;
+
+            if (now - lastShot_ < cfg_.shotInterval)
+                return;
+
+            sendMove_(latestThreat_->aim); // 1) курсор
+            sendEject_();                  // 2) eject в том же цикле
             lastShot_ = now;
             restoreAt_ = now + tickWait(now, rtt) + cfg_.holdMargin;
             phase_ = Phase::Hold;
+        }
+
+        const std::optional<Threat>& latestThreat() const {
+            return latestThreat_;
         }
 
         // ------------------------------------------------------------ формулы
@@ -159,64 +197,96 @@ namespace virus_ejector {
         //   сумма V·tick·ρ^i, i = 0..n-1,  n = tau/tick  =>  V·tick·(1-ρ^n)/(1-ρ)
         Vec2 advance(Vec2 pos, Vec2 vel, float tau) const {
             const float rho = cfg_.virusDecay;
-            if (rho <= 0.f || rho >= 0.9999f) return pos + vel * tau;
+            if (tau <= 0.f)
+                return pos;
+            if (cfg_.tick <= 0.f || rho >= 0.9999f)
+                return pos + vel * tau;
+            if (rho <= 0.f)
+                return pos + vel * std::min(tau, cfg_.tick);
+
             const float n = tau / cfg_.tick;
-            return pos + vel * (cfg_.tick * (1.f - std::pow(rho, n)) / (1.f - rho));
+            return pos + vel * (
+                cfg_.tick * (1.f - std::pow(rho, n)) / (1.f - rho)
+                );
         }
 
         std::optional<Threat> findThreat(double now, double rtt) const {
             const float wait = tickWait(now, rtt);
-            const float age = float(now - lastArrival_);
-            // снимок уже опоздал на rtt/2, пакет идёт ещё rtt/2, затем ожидание тика:
-            const float tauProc = age + float(rtt) + wait;   // от момента снимка до обработки eject сервером
+            // Позиции клеток здесь текущие (render state), а позиции вирусов
+            // могут быть старше: projected-to-now ниже учитывает их собственное время.
+            const float tauProc = std::max(0.f, static_cast<float>(rtt)) + wait;
 
             std::optional<Threat> best;
             for (const Body& v : viruses_) {
                 Vec2 vv;
-                if (!virusTracks_.velocity(v.id, vv) || len(vv) < cfg_.minVirusSpeed) continue;
+                if (!virusTracks_.velocity(v.id, vv, now) || len(vv) < cfg_.minVirusSpeed)
+                    continue;
+
+                const double observedAt = v.observedAt >= 0.0 ? v.observedAt : lastArrival_;
+                if (now < observedAt)
+                    continue;
+
+                const float virusAge = static_cast<float>(now - observedAt);
+                // Приводим вирус к текущему времени, прежде чем считать TTI.
+                const Vec2 virusNow = advance(v.pos, vv, virusAge);
 
                 for (const Body& c : cells_) {
-                    // 1) вирус вообще опасен для клетки (то же правило, что в клиенте для сплитов)
-                    if (c.radius * c.radius < cfg_.massRatio * v.radius * v.radius) continue;
-                    const float rHit = c.radius - cfg_.hitRadiusK * v.radius + cfg_.hitMargin;
-                    if (rHit <= 0.f) continue;
+                    // 1) Проверка, может ли клетка съесть вирус.
+                    if (c.radius * c.radius < cfg_.massRatio * v.radius * v.radius)
+                        continue;
 
-                    // 2) время до попадания: |q + w·t| = rHit, w — относительная скорость
-                    Vec2 vc{}; cellTracks_.velocity(c.id, vc);           // нет скорости -> стоит
-                    const Vec2 q = v.pos - c.pos;
+                    const float rHit = c.radius - cfg_.hitRadiusK * v.radius + cfg_.hitMargin;
+                    if (rHit <= 0.f)
+                        continue;
+
+                    // 2) Время до попадания относительно текущих позиций:
+                    // |q + w*t| = rHit, где w — относительная скорость.
+                    Vec2 vc{};
+                    cellTracks_.velocity(c.id, vc, now); // если скорость недоступна — считаем клетку неподвижной
+                    const Vec2 q = virusNow - c.pos;
                     const Vec2 w = vv - vc;
                     const float a = dot(w, w);
-                    if (a < 1e-6f) continue;
-                    const float b = dot(q, w), cc = dot(q, q) - rHit * rHit;
-                    const float disc = b * b - a * cc;
-                    if (disc < 0.f) continue;                            // пролетит мимо
-                    const float s = std::sqrt(disc);
-                    const float t1 = (-b - s) / a, t2 = (-b + s) / a;
-                    if (t2 < 0.f) continue;                              // уже удаляется
-                    const float tti = std::max(0.f, t1);
-                    if (tti > cfg_.maxTTI) continue;
+                    if (a < 1e-6f)
+                        continue;
 
-                    // 3) точка прицеливания: вирус на момент попадания выброса.
-                    //    tau зависит от полёта, полёт — от aim: 3 итерации хватает.
-                    const Vec2 origin = c.pos + vc * tauProc;            // где будет клетка при выстреле
+                    const float b = dot(q, w);
+                    const float cc = dot(q, q) - rHit * rHit;
+                    const float disc = b * b - a * cc;
+                    if (disc < 0.f)
+                        continue;
+
+                    const float root = std::sqrt(disc);
+                    const float t1 = (-b - root) / a;
+                    const float t2 = (-b + root) / a;
+                    if (t2 < 0.f)
+                        continue;
+
+                    const float tti = std::max(0.f, t1);
+                    if (tti > cfg_.maxTTI)
+                        continue;
+
+                    // 3) Прицел в прогнозируемую позицию вируса при обработке выстрела.
+                    const Vec2 origin = c.pos + vc * tauProc;
                     float tau = tauProc;
-                    Vec2 aim = advance(v.pos, vv, tau);
+                    Vec2 aim = advance(virusNow, vv, tau);
                     for (int i = 0; i < 3; ++i) {
-                        aim = advance(v.pos, vv, tau);
+                        aim = advance(virusNow, vv, tau);
                         const float flight = cfg_.ejectSpeed > 0.f
                             ? std::max(0.f, len(aim - origin) - c.radius) / cfg_.ejectSpeed
                             : 0.f;
                         tau = tauProc + flight;
                     }
-                    aim = advance(v.pos, vv, tau);
+                    aim = advance(virusNow, vv, tau);
 
-                    // 4) не успеваем — не тратим кулдаун
-                    if (tti <= tau) continue;
+                    // 4) Если выстрел не успеет до столкновения, угрозу игнорируем.
+                    if (tti <= tau)
+                        continue;
 
-                    if (!best || tti < best->tti) best = Threat{ v.id, c.id, aim, tti, tau };
+                    if (!best || tti < best->tti)
+                        best = Threat{ v.id, c.id, aim, tti, tau };
                 }
             }
-            return best;       // минимальный TTI, а не минимальное расстояние
+            return best; // ближайшее по времени столкновение
         }
 
     private:
@@ -225,6 +295,7 @@ namespace virus_ejector {
         MoveFn sendMove_; EjectFn sendEject_;
         MotionTracker virusTracks_, cellTracks_;
         std::vector<Body> viruses_, cells_;
+        std::optional<Threat> latestThreat_;
         Vec2 userCursor_{};
         Phase phase_ = Phase::Idle;
         double lastShot_ = -1e9, restoreAt_ = 0, lastArrival_ = 0;

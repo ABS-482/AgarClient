@@ -15,7 +15,7 @@ struct ServerListEntry
     std::string status;
     std::string address; // атрибут "value" — готовый host:port
 
-    int modenumber = 0;
+    std::string modenumber;
     int online = 0;
     int connectlimit = 0;
     int top = 0;

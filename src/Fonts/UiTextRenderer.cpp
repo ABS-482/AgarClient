@@ -207,7 +207,7 @@ void UiTextRenderer::flush(
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
     glUseProgram(m_prog);
-    glUniform1f(m_uGamma, 0.55f);
+    glUniform1f(m_uGamma, 1.0f);
     glUniform2f(m_uScreen, screenW, screenH);
     glUniform1i(m_uAtlas, 0);
 

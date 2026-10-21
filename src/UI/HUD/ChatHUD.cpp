@@ -13,10 +13,89 @@
 #include "../../Graphics/SkinManager.h"
 #include "../../Game/World.h"
 #include "../../Network/UserSkinDatabase.h"
-#include "../../Fonts/UiFont.h"
-#include "../../Fonts/UiTextRenderer.h"
+#include "../../Fonts/UiFonts.h"
 #include <chrono>
 #include "../../FrameProfiler.h"
+#include "../../Graphics/Shaders/UiTextureShader.h"
+#include "../../Core/AssetPath.h"
+
+#include <stb_image.h>
+#include <iostream>
+
+namespace
+{
+    GLuint loadVerifiedTexture(const std::string& path)
+    {
+        int width = 0;
+        int height = 0;
+        int channels = 0;
+
+        unsigned char* pixels = stbi_load(
+            path.c_str(),
+            &width,
+            &height,
+            &channels,
+            4
+        );
+
+        if (pixels == nullptr)
+        {
+            std::cerr
+                << "[ChatHUD] Cannot load verified texture: "
+                << path << " | "
+                << stbi_failure_reason()
+                << '\n';
+
+            return 0;
+        }
+
+        GLuint texture = 0;
+
+        glGenTextures(1, &texture);
+        glBindTexture(GL_TEXTURE_2D, texture);
+
+        glTexParameteri(
+            GL_TEXTURE_2D,
+            GL_TEXTURE_MIN_FILTER,
+            GL_LINEAR
+        );
+
+        glTexParameteri(
+            GL_TEXTURE_2D,
+            GL_TEXTURE_MAG_FILTER,
+            GL_LINEAR
+        );
+
+        glTexParameteri(
+            GL_TEXTURE_2D,
+            GL_TEXTURE_WRAP_S,
+            GL_CLAMP_TO_EDGE
+        );
+
+        glTexParameteri(
+            GL_TEXTURE_2D,
+            GL_TEXTURE_WRAP_T,
+            GL_CLAMP_TO_EDGE
+        );
+
+        glTexImage2D(
+            GL_TEXTURE_2D,
+            0,
+            GL_RGBA8,
+            width,
+            height,
+            0,
+            GL_RGBA,
+            GL_UNSIGNED_BYTE,
+            pixels
+        );
+
+        glBindTexture(GL_TEXTURE_2D, 0);
+        stbi_image_free(pixels);
+
+        return texture;
+    }
+}
 
 ChatHUD::ChatHUD(
     UIPanel& uiPanel,
@@ -26,8 +105,7 @@ ChatHUD::ChatHUD(
     Shader& chatSkinShader,
     SkinMesh& skinMesh,
     SkinManager& skinManager,
-    UiFont& chatFont,
-    UiTextRenderer& chatTextRenderer,
+    UiFonts& uiFonts,
     UserSkinDatabase& userSkinDatabase
 )
     : uiPanel(uiPanel),
@@ -35,10 +113,13 @@ ChatHUD::ChatHUD(
     font(font),
     world(world),
     chatSkinShader(chatSkinShader),
+    verifiedTextureShader(
+        UiTextureShader::vertex,
+        UiTextureShader::fragment
+    ),
     skinMesh(skinMesh),
     skinManager(skinManager),
-    chatFont(chatFont),
-    chatTextRenderer(chatTextRenderer),
+    uiFonts(uiFonts),
     userSkinDatabase(userSkinDatabase)
 {
     chatSkinCenter =
@@ -58,6 +139,34 @@ ChatHUD::ChatHUD(
 
     chatSkinBorderColor =
         chatSkinShader.uniformLocation("uBorderColor");
+
+    verifiedTextureCenter =
+        verifiedTextureShader.uniformLocation("uCenter");
+
+    verifiedTextureHalfSize =
+        verifiedTextureShader.uniformLocation("uHalfSize");
+
+    verifiedTextureScreenSize =
+        verifiedTextureShader.uniformLocation("uScreenSize");
+
+    verifiedTextureSampler =
+        verifiedTextureShader.uniformLocation("uTexture");
+
+    verifiedTextureTint =
+        verifiedTextureShader.uniformLocation("uTint");
+
+    verifiedTexture = loadVerifiedTexture(
+        AssetPath::get("ui/verified.png")
+    );
+}
+
+ChatHUD::~ChatHUD()
+{
+    if (verifiedTexture != 0)
+    {
+        glDeleteTextures(1, &verifiedTexture);
+        verifiedTexture = 0;
+    }
 }
 
 void ChatHUD::draw(
@@ -210,7 +319,7 @@ void ChatHUD::draw(
                     current + character;
 
                 const float width =
-                    chatFont.measureWidth(candidate);
+                    uiFonts.chat.measureWidth(candidate);
 
                 if (!current.empty() && width > maxWidth)
                 {
@@ -278,7 +387,7 @@ void ChatHUD::draw(
                     : currentLine + " " + word;
 
                 const float candidateWidth =
-                    chatFont.measureWidth(candidate);
+                    uiFonts.chat.measureWidth(candidate);
 
                 if (candidateWidth <= textWidth)
                 {
@@ -339,7 +448,7 @@ void ChatHUD::draw(
         enterAvatarGap;
 
     const float enterSuffixWidth =
-        chatFont.measureWidth(" enters the game");
+        uiFonts.chat.measureWidth(" enters the game");
 
     const auto updateEnterLayout =
         [&](ChatVisualMessage& visual)
@@ -388,7 +497,7 @@ void ChatHUD::draw(
             if (!visual.isEnter && !visual.isContinuation)
             {
                 visual.displayNameWidth =
-                    chatFont.measureWidth(visual.displayName);
+                    uiFonts.chat.measureWidth(visual.displayName);
             }
 
             if (visual.isEnter)
@@ -396,7 +505,7 @@ void ChatHUD::draw(
                 visual.enterNameLines = wrapText(visual.displayName);
 
                 visual.enterLastNameWidth =
-                    chatFont.measureWidth(
+                    uiFonts.chat.measureWidth(
                         visual.enterNameLines.back()
                     );
 
@@ -759,7 +868,7 @@ void ChatHUD::draw(
                     float textB)
                 {
                     const float textWidth =
-                        chatFont.measureWidth(text) * badgeTextScale;
+                        uiFonts.chat.measureWidth(text) * badgeTextScale;
 
                     const float badgeWidth =
                         std::max(
@@ -797,13 +906,13 @@ void ChatHUD::draw(
                         centerX - textWidth * 0.5f;
 
                     const float scaledTextHeight =
-                        chatFont.lineHeight() * badgeTextScale;
+                        uiFonts.chat.lineHeight() * badgeTextScale;
 
                     const float textY =
                         badgeCenterY - scaledTextHeight * 0.5f;
 
-                    chatTextRenderer.add(
-                        chatFont,
+                    uiFonts.renderer.add(
+                        uiFonts.chat,
                         text,
                         textX,
                         textY,
@@ -861,7 +970,7 @@ void ChatHUD::draw(
     // ------------------------------------------------------------
     // Отрисовка сообщений
     // ------------------------------------------------------------
-    chatTextRenderer.beginProfile(profiler);
+    uiFonts.renderer.beginProfile(profiler);
 
     for (const size_t index : visibleIndices)
     {
@@ -1022,8 +1131,8 @@ void ChatHUD::draw(
                     enterTextY +
                     lineHeight * static_cast<float>(lineIndex);
 
-                chatTextRenderer.add(
-                    chatFont,
+                uiFonts.renderer.add(
+                    uiFonts.chat,
                     visual.enterNameLines[lineIndex],
                     enterNameX,
                     lineY,
@@ -1057,8 +1166,8 @@ void ChatHUD::draw(
                 enterTextY +
                 lineHeight * static_cast<float>(enterSuffixLineIndex);
 
-            chatTextRenderer.add(
-                chatFont,
+            uiFonts.renderer.add(
+                uiFonts.chat,
                 enterText,
                 enterSuffixX,
                 enterSuffixY,
@@ -1251,8 +1360,8 @@ void ChatHUD::draw(
                 const float nicknameWidth =
                     visual.displayNameWidth;
 
-                chatTextRenderer.add(
-                    chatFont,
+                uiFonts.renderer.add(
+                    uiFonts.chat,
                     visual.displayName,
                     textX,
                     nicknameY,
@@ -1263,8 +1372,8 @@ void ChatHUD::draw(
                 );
 
                 // Двоеточие выводится после ника и, при необходимости, значка.
-                chatTextRenderer.add(
-                    chatFont,
+                uiFonts.renderer.add(
+                    uiFonts.chat,
                     ":",
                     textX + nicknameWidth,
                     nicknameY,
@@ -1296,8 +1405,8 @@ void ChatHUD::draw(
                     bodyFirstLineY +
                     lineHeight * static_cast<float>(lineIndex);
 
-                chatTextRenderer.add(
-                    chatFont,
+                uiFonts.renderer.add(
+                    uiFonts.chat,
                     visual.lines[lineIndex],
                     textX,
                     lineY,
@@ -1313,57 +1422,64 @@ void ChatHUD::draw(
             visual.boxHeight +
             visual.bottomMargin;
     }
-    chatTextRenderer.flush(
-        chatFont,
+    uiFonts.renderer.flush(
+        uiFonts.chat,
         screenW,
         screenH
     );
     recordChatStage(FrameProfiler::ChatRender);
 
-    // Рисуем галочки поверх текста, как отдельный слой.
-    const auto drawCheckTriangle =
-        [&](float x1, float y1,
-            float x2, float y2,
-            float x3, float y3)
-        {
-            uiPanel.drawTriangle(
-                x1, y1,
-                x2, y2,
-                x3, y3,
-                1.0f, 1.0f, 0.0f, 1.0f,
-                screenW,
-                screenH
-            );
-        };
-
-    for (const auto& [x, y] : verifiedMarks)
+    // Рисуем настоящую текстуру verified поверх чата.
+    if (verifiedTexture != 0 && !verifiedMarks.empty())
     {
-        // Короткий штрих.
-        drawCheckTriangle(
-            x, y + 5.0f,
-            x + 1.7f, y + 3.4f,
-            x + 5.0f, y + 6.2f
+        verifiedTextureShader.use();
+
+        verifiedTextureShader.setVec2(
+            verifiedTextureScreenSize,
+            screenW,
+            screenH
         );
 
-        drawCheckTriangle(
-            x, y + 5.0f,
-            x + 5.0f, y + 6.2f,
-            x + 3.5f, y + 7.8f
+        verifiedTextureShader.setInt(
+            verifiedTextureSampler,
+            0
         );
 
-        // Длинный штрих.
-        drawCheckTriangle(
-            x + 3.5f, y + 7.8f,
-            x + 5.1f, y + 9.0f,
-            x + 12.0f, y + 2.0f
+        // Жёлтый оттенок, как в оригинальном Java-клиенте.
+        verifiedTextureShader.setVec4(
+            verifiedTextureTint,
+            1.0f,
+            1.0f,
+            0.0f,
+            1.0f
         );
 
-        drawCheckTriangle(
-            x + 3.5f, y + 7.8f,
-            x + 12.0f, y + 2.0f,
-            x + 10.5f, y + 0.6f
-        );
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, verifiedTexture);
+
+        constexpr float markSize = 12.0f;
+        constexpr float halfSize = markSize * 0.5f;
+
+        for (const auto& [x, y] : verifiedMarks)
+        {
+            verifiedTextureShader.setVec2(
+                verifiedTextureCenter,
+                x + halfSize,
+                y + halfSize
+            );
+
+            verifiedTextureShader.setVec2(
+                verifiedTextureHalfSize,
+                halfSize,
+                halfSize
+            );
+
+            skinMesh.draw();
+        }
+
+        glBindTexture(GL_TEXTURE_2D, 0);
     }
+
     recordChatStage(FrameProfiler::ChatVerifiedMarks);
 
     glDisable(GL_SCISSOR_TEST);

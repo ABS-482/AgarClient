@@ -132,7 +132,7 @@ std::vector<ServerListEntry> ServerListFetcher::parse(const std::string& html)
             else if (key == "food") entry.food = value;
             else if (key == "status") entry.status = value;
             else if (key == "value") entry.address = value;
-            else if (key == "modenumber") entry.modenumber = toInt(value);
+            else if (key == "modenumber") entry.modenumber = value;
             else if (key == "online") entry.online = toInt(value);
             else if (key == "connectlimit") entry.connectlimit = toInt(value);
             else if (key == "top") entry.top = toInt(value);

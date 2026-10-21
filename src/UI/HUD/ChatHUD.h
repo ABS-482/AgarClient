@@ -1,3 +1,4 @@
+
 #pragma once
 
 #include <cstdint>
@@ -6,19 +7,20 @@
 #include <string>
 
 #include "../../Game/ChatMessage.h"
+#include "../../Graphics/Shader.h"
+
 #include <glad/glad.h>
 
 class UIPanel;
 class TextRenderer;
 class Font;
 class World;
-class Shader;
 class SkinMesh;
 class SkinManager;
-class UiFont;
-class UiTextRenderer;
+class UiFonts;
 class UserSkinDatabase;
 class FrameProfiler;
+
 class ChatHUD
 {
 public:
@@ -30,10 +32,11 @@ public:
         Shader& chatSkinShader,
         SkinMesh& skinMesh,
         SkinManager& skinManager,
-        UiFont& chatFont,
-        UiTextRenderer& chatTextRenderer,
+        UiFonts& uiFonts,
         UserSkinDatabase& userSkinDatabase
     );
+
+    ~ChatHUD();
 
     void draw(
         FrameProfiler& profiler,
@@ -74,7 +77,6 @@ private:
     std::uint64_t preparedChatResetVersion = 0;
 
     bool hasPreparedChatView = false;
-    // Защищённость сообщений уже рассчитана для загруженной базы.
     bool verifiedMarksPrepared = false;
 
     UIPanel& uiPanel;
@@ -82,10 +84,10 @@ private:
     Font& font;
     World& world;
     Shader& chatSkinShader;
+    Shader verifiedTextureShader;
     SkinMesh& skinMesh;
     SkinManager& skinManager;
-    UiFont& chatFont;
-    UiTextRenderer& chatTextRenderer;
+    UiFonts& uiFonts;
     UserSkinDatabase& userSkinDatabase;
 
     GLint chatSkinCenter = -1;
@@ -94,4 +96,14 @@ private:
     GLint chatSkinTexture = -1;
     GLint chatSkinBorderWidth = -1;
     GLint chatSkinBorderColor = -1;
+
+    // Текстура verified.
+    GLuint verifiedTexture = 0;
+
+    // Uniform-переменные шейдера verified.
+    GLint verifiedTextureCenter = -1;
+    GLint verifiedTextureHalfSize = -1;
+    GLint verifiedTextureScreenSize = -1;
+    GLint verifiedTextureSampler = -1;
+    GLint verifiedTextureTint = -1;
 };

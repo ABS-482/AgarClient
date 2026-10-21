@@ -263,9 +263,9 @@ void GameRenderer::draw(
 )
 {
     glClearColor(
-        19.0f / 255.0f,
-        40.0f / 255.0f,
-        71.0f / 255.0f,
+        242.0f / 255.0f,
+        251.0f / 255.0f,
+        255.0f / 255.0f,
         1.0f
     );
 

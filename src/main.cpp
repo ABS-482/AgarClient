@@ -7,10 +7,13 @@
 #include <chrono>
 #include <iostream>
 #include <sstream>
+#include <cmath>
+#include <utility>
 #include <unordered_map>
 #include <exception>
 #include <filesystem>
 #include <string>
+#include <iomanip>
 
 // Core
 #include "Core/FrameStats.h"
@@ -65,16 +68,14 @@
 #include "Game/MacroController.h"
 #include "Game/ServerListEntry.h"
 
-#include "Fonts/UiFont.h"
-#include "Fonts/UiTextRenderer.h"
-
+#include "Fonts/UiFonts.h"
 // ixWebSocket
 #include <ixwebsocket/IXNetSystem.h>
 
 #include "VirusGuard/VirusGuard.h"
+#include "VirusGuard/VirusEjector.h"
 
 #include "FrameProfiler.h"
-#include <iomanip>
 
 enum class AppState
 {
@@ -168,7 +169,6 @@ static int runGame()
     // -------------------------
     // Shaders
     // -------------------------
-
     Shader circleShader(
         CircleShader::vertex,
         CircleShader::fragment
@@ -210,12 +210,8 @@ static int runGame()
         0
     );
 
-    UiFont chatFont(
-        AssetPath::get("fonts/arial.otf"),
-        13.0f,
-        1.0f,
-        1.0f
-    );
+    // Все UI-шрифты и UiTextRenderer собраны в одном объекте.
+    UiFonts uiFonts;
 
     // -------------------------
     // Ресурсы предпросмотра скина
@@ -235,7 +231,6 @@ static int runGame()
     UIPanel uiPanel;
     IconRenderer iconRenderer;
     TextRenderer textRenderer(textShader);
-    UiTextRenderer chatTextRenderer;
 
     MainMenu mainMenu(
         uiPanel,
@@ -345,6 +340,35 @@ static int runGame()
 
     packetHandler.setNetworkClient(network);
 
+    // VirusEjector: first run is deliberately diagnostic-only.
+    virus_ejector::Config virusEjectorConfig;
+    virusEjectorConfig.autoFire = false;
+
+    virus_ejector::VirusEjector virusEjector(
+        virusEjectorConfig,
+        [&network](virus_ejector::Vec2 target)
+        {
+            // Match the normal client's integer world-coordinate aim.
+            network.sendAimPosition(std::floor(target.x), std::floor(target.y));
+        },
+        [&network, &virusGuard]()
+        {
+            network.requestEjectMass();
+            virusGuard.noteOwnEject();
+        }
+    );
+
+    // World::snapshot() reuses its shared_ptr until the world changes.
+    decltype(world.snapshot()) previousVirusEjectorSnapshot;
+    double virusEjectorSnapshotArrival = 0.0;
+    bool hasVirusEjectorSnapshotArrival = false;
+
+    // Rate-limit repeated diagnostics for a stable threat.
+    uint32_t loggedVirusId = 0;
+    uint32_t loggedCellId = 0;
+    bool hadLoggedVirusThreat = false;
+    auto lastVirusThreatLog = std::chrono::steady_clock::time_point{};
+
     network.setPlayerPassword("");
     network.setNickname("Android Player");
     network.setPlayerColor(9);
@@ -355,7 +379,6 @@ static int runGame()
     FrameStats stats;
     GameState gameState;
     FrameProfiler profiler;
-
     GameHUD gameHud(
         uiPanel,
         textRenderer,
@@ -366,8 +389,7 @@ static int runGame()
         chatSkinShader,
         skinMesh,
         skinManager,
-        chatFont,
-        chatTextRenderer,
+        uiFonts,
         userSkinDatabase
     );
 
@@ -679,7 +701,7 @@ static int runGame()
                     if (
                         nowMacro -
                         gameState.lastMacroShotTime >=
-                        std::chrono::milliseconds(200)
+                        std::chrono::milliseconds(150)
                         )
                     {
                         gameState.lastMacroShotTime =
@@ -692,8 +714,6 @@ static int runGame()
                             true
                         );
 
-                        network.requestEjectMass();
-                        virusGuard.noteOwnEject();
                         network.requestEjectMass();
                         virusGuard.noteOwnEject();
                     }
@@ -760,6 +780,133 @@ static int runGame()
                 targetWorldY
             );
 
+            if (!menuOpen)
+            {
+                const auto virusEjectorNow = std::chrono::steady_clock::now();
+                const double nowSeconds = std::chrono::duration<double>(
+                    virusEjectorNow.time_since_epoch()
+                ).count();
+
+                // Keep the arrival timestamp stable while World returns the same snapshot.
+                if (!hasVirusEjectorSnapshotArrival ||
+                    blobs != previousVirusEjectorSnapshot)
+                {
+                    previousVirusEjectorSnapshot = blobs;
+                    virusEjectorSnapshotArrival = nowSeconds;
+                    hasVirusEjectorSnapshotArrival = true;
+                }
+
+                const auto toSeconds = [](std::chrono::steady_clock::time_point t)
+                    {
+                        return std::chrono::duration<double>(t.time_since_epoch()).count();
+                    };
+
+                std::vector<virus_ejector::Body> viruses;
+                std::vector<virus_ejector::Body> ownCells;
+
+                if (blobs)
+                {
+                    viruses.reserve(blobs->size() / 8 + 1);
+                    for (const auto& [id, blob] : *blobs)
+                    {
+                        if (!blob.isVirus && blob.cellType != CellType::Virus)
+                            continue;
+
+                        viruses.push_back({
+                            id,
+                            { blob.targetX, blob.targetY },
+                            blob.targetSize,
+                            toSeconds(blob.lastUpdateTime)
+                            });
+                    }
+
+                    ownCells.reserve(ownedIds.size());
+                    for (const uint32_t id : ownedIds)
+                    {
+                        const auto blobIt = blobs->find(id);
+                        if (blobIt == blobs->end())
+                            continue;
+
+                        const auto renderIt = renderStates.find(id);
+                        if (renderIt != renderStates.end() && renderIt->second.initialized)
+                        {
+                            // Use the displayed/interpolated position for our cells.
+                            ownCells.push_back({
+                                id,
+                                { renderIt->second.x, renderIt->second.y },
+                                renderIt->second.size,
+                                nowSeconds
+                                });
+                        }
+                        else
+                        {
+                            // Fallback until a render state has been initialized.
+                            const Blob& blob = blobIt->second;
+                            ownCells.push_back({
+                                id,
+                                { blob.targetX, blob.targetY },
+                                blob.targetSize,
+                                toSeconds(blob.lastUpdateTime)
+                                });
+                        }
+                    }
+                }
+
+                virusEjector.onSnapshot(
+                    nowSeconds,
+                    virusEjectorSnapshotArrival,
+                    std::move(viruses),
+                    std::move(ownCells)
+                );
+                virusEjector.onUserCursor({ targetWorldX, targetWorldY });
+
+                // NetworkClient::pingMs() is an RTT measurement in milliseconds.
+                const double rttSeconds =
+                    static_cast<double>((std::max)(0, network.pingMs())) / 1000.0;
+
+                virusEjector.update(nowSeconds, rttSeconds);
+
+                const auto& threat = virusEjector.latestThreat();
+                if (threat)
+                {
+                    const bool changed =
+                        !hadLoggedVirusThreat ||
+                        threat->virusId != loggedVirusId ||
+                        threat->cellId != loggedCellId;
+                    const bool periodic =
+                        lastVirusThreatLog == std::chrono::steady_clock::time_point{} ||
+                        virusEjectorNow - lastVirusThreatLog >= std::chrono::milliseconds(100);
+
+                    if (changed || periodic)
+                    {
+                        const auto oldFlags = std::cout.flags();
+                        const auto oldPrecision = std::cout.precision();
+                        std::cout << std::fixed << std::setprecision(3)
+                            << "[VirusEjector] t=" << nowSeconds
+                            << " virus=" << threat->virusId
+                            << " cell=" << threat->cellId
+                            << " tti=" << threat->tti << "s"
+                            << " tau=" << threat->tau << "s"
+                            << " slack=" << (threat->tti - threat->tau) << "s"
+                            << " aim=(" << threat->aim.x << ", "
+                            << threat->aim.y << ")"
+                            << " rtt=" << rttSeconds << "s\n";
+                        std::cout.flags(oldFlags);
+                        std::cout.precision(oldPrecision);
+
+                        loggedVirusId = threat->virusId;
+                        loggedCellId = threat->cellId;
+                        lastVirusThreatLog = virusEjectorNow;
+                    }
+                    hadLoggedVirusThreat = true;
+                }
+                else if (hadLoggedVirusThreat)
+                {
+                    std::cout << "[VirusEjector] threat cleared\n";
+                    hadLoggedVirusThreat = false;
+                }
+            }
+
             {
                 FrameProfiler::ScopedTimer timer(
                     profiler,
@@ -785,17 +932,50 @@ static int runGame()
             if (const ServerListEntry* server =
                 findConnectedServer(serverList, network.currentUrl()))
             {
+                const int realtimeOnline = network.serverPlayersOnline();
+
+                const int online =
+                    realtimeOnline >= 0
+                    ? realtimeOnline
+                    : server->online;
+
+                const int uptime = network.serverUptimeMinutes();
+                const int totalMass = network.serverTotalMass();
+                const int totalCells = network.serverTotalCells();
+
                 std::ostringstream stream;
 
+                stream << server->mode;
+
+                if (!server->modenumber.empty())
+                    stream << " #" << server->modenumber;
+
+                if (!server->sname.empty())
+                    stream << ' ' << server->sname;
+
                 stream
-                    << server->mode
-                    << " #" << server->modenumber
-                    << ' ' << server->sname
-                    << " Map" << server->map
-                    << " Food" << server->food
-                    << " - " << server->online
+                    << ' ' << online
                     << '/' << server->connectlimit
-                    << " online";
+                    << " online (uptime: ";
+
+                if (uptime >= 0)
+                    stream << uptime;
+                else
+                    stream << '?';
+
+                stream << " min) / totalmass: ";
+
+                if (totalMass >= 0)
+                    stream << totalMass;
+                else
+                    stream << '?';
+
+                stream << " / bombs: ";
+
+                if (totalCells >= 0)
+                    stream << totalCells;
+                else
+                    stream << '?';
 
                 serverInfoText = stream.str();
             }
@@ -814,7 +994,9 @@ static int runGame()
                     screenH,
                     stats.fps(),
                     network.pingMs(),
-                    serverInfoText
+                    network.connectedDurationSeconds(),
+                    serverInfoText,
+                    network.gameMode()
                 );
             }
 
@@ -1072,7 +1254,6 @@ static int runGame()
             printStat(FrameProfiler::PlayerHUD);
             printStat(FrameProfiler::TextEnd);
 
-            std::cout << out.str() << '\n';
         }
     }
 

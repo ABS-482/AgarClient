@@ -11,15 +11,15 @@ class UIPanel;
 class TextRenderer;
 class Font;
 class GameState;
+class UiFonts;
 
 class PlayerHUD
 {
 public:
     PlayerHUD(
         UIPanel& uiPanel,
-        TextRenderer& textRenderer,
-        Font& font,
-        GameState& gameState
+        GameState& gameState,
+        UiFonts& uiFonts
     );
 
     void draw(
@@ -29,12 +29,12 @@ public:
         float screenH,
         double fps,
         int pingMs,
+        std::int64_t serverSessionSeconds,
         const std::string& serverInfoText
     );
 
 private:
     UIPanel& uiPanel;
-    TextRenderer& textRenderer;
-    Font& font;
+    UiFonts& uiFonts;
     GameState& gameState;
 };

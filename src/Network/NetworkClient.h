@@ -74,16 +74,14 @@ public:
     void requestSpawn();
     void sendChat(const std::string& text);
 
-    void setGameMode(
-        uint8_t gameMode
-    )
+    void setGameMode(uint8_t gameMode) noexcept
     {
-        m_gameMode = gameMode;
+        m_gameMode.store(gameMode, std::memory_order_relaxed);
     }
 
-    uint8_t gameMode() const
+    uint8_t gameMode() const noexcept
     {
-        return m_gameMode;
+        return m_gameMode.load(std::memory_order_relaxed);
     }
 
     bool isConnected() const
@@ -101,6 +99,54 @@ public:
     int pingMs() const noexcept
     {
         return m_pingMs.load(std::memory_order_relaxed);
+    }
+
+    std::int64_t connectedDurationSeconds() const noexcept;
+
+    int serverPlayersOnline() const noexcept
+    {
+        return m_serverPlayersOnline.load(std::memory_order_relaxed);
+    }
+
+    int serverUptimeMinutes() const noexcept
+    {
+        return m_serverUptimeMinutes.load(std::memory_order_relaxed);
+    }
+
+    int serverTotalCells() const noexcept
+    {
+        return m_serverTotalCells.load(std::memory_order_relaxed);
+    }
+
+    int serverTotalMass() const noexcept
+    {
+        return m_serverTotalMass.load(std::memory_order_relaxed);
+    }
+
+    void setServerRealtimeBase(
+        int playersOnline,
+        int uptimeMinutes
+    ) noexcept
+    {
+        m_serverPlayersOnline.store(
+            playersOnline,
+            std::memory_order_relaxed
+        );
+
+        m_serverUptimeMinutes.store(
+            uptimeMinutes,
+            std::memory_order_relaxed
+        );
+    }
+
+    void setServerTotalCells(int value) noexcept
+    {
+        m_serverTotalCells.store(value, std::memory_order_relaxed);
+    }
+
+    void setServerTotalMass(int value) noexcept
+    {
+        m_serverTotalMass.store(value, std::memory_order_relaxed);
     }
 
     // Вызывается PacketHandler при получении ответа opcode 115.
@@ -137,7 +183,7 @@ private:
     ConnectionMode m_connectionMode =
         ConnectionMode::Play;
 
-    uint8_t m_gameMode = 0;
+    std::atomic<uint8_t> m_gameMode{ 0 };
 
     PacketHandler& m_handler;
     ix::WebSocket m_webSocket;
@@ -153,4 +199,9 @@ private:
     std::atomic<uint32_t> m_lastPingHash{ 0 };
     std::atomic<int64_t> m_lastPingSentAtMs{ 0 };
     std::atomic<int> m_pingMs{ -1 };
+    std::atomic<std::int64_t> m_connectedAtMs{ -1 };
+    std::atomic<int> m_serverPlayersOnline{ -1 };
+    std::atomic<int> m_serverUptimeMinutes{ -1 };
+    std::atomic<int> m_serverTotalCells{ -1 };
+    std::atomic<int> m_serverTotalMass{ -1 };
 };

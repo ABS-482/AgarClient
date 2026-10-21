@@ -116,9 +116,20 @@ NetworkClient::NetworkClient(PacketHandler& handler)
             switch (msg->type)
             {
             case ix::WebSocketMessageType::Open:
+            {
                 m_connected = true;
                 m_connectionFailed = false;
                 m_intentionalDisconnect = false;
+
+                const auto connectedAtMs =
+                    std::chrono::duration_cast<std::chrono::milliseconds>(
+                        std::chrono::steady_clock::now().time_since_epoch()
+                    ).count();
+
+                m_connectedAtMs.store(
+                    connectedAtMs,
+                    std::memory_order_release
+                );
 
                 std::cout << "WebSocket connected.\n";
 
@@ -134,6 +145,7 @@ NetworkClient::NetworkClient(PacketHandler& handler)
                 }
 
                 break;
+            }
 
             case ix::WebSocketMessageType::Close:
                 m_connected = false;
@@ -141,12 +153,16 @@ NetworkClient::NetworkClient(PacketHandler& handler)
                 if (!m_intentionalDisconnect)
                     m_connectionFailed = true;
 
+                m_connectedAtMs.store(-1, std::memory_order_release);
+
                 std::cout << "WebSocket closed.\n";
                 break;
 
             case ix::WebSocketMessageType::Error:
                 m_connected = false;
                 m_connectionFailed = true;
+
+                m_connectedAtMs.store(-1, std::memory_order_release);
 
                 std::cerr << "WebSocket error: "
                     << msg->errorInfo.reason << '\n';
@@ -186,7 +202,10 @@ void NetworkClient::connect(
     m_connectionFailed = false;
     m_intentionalDisconnect = false;
     m_lastPingAttempt = std::chrono::steady_clock::now();
-
+    m_serverPlayersOnline.store(-1, std::memory_order_relaxed);
+    m_serverUptimeMinutes.store(-1, std::memory_order_relaxed);
+    m_serverTotalCells.store(-1, std::memory_order_relaxed);
+    m_serverTotalMass.store(-1, std::memory_order_relaxed);
     m_lastPingHash.store(0, std::memory_order_relaxed);
     m_lastPingSentAtMs.store(0, std::memory_order_relaxed);
     m_pingMs.store(-1, std::memory_order_relaxed);
@@ -202,6 +221,7 @@ void NetworkClient::connect(
 void NetworkClient::disconnect()
 {
     m_intentionalDisconnect = true;
+    m_connectedAtMs.store(-1, std::memory_order_release);
 
     m_webSocket.stop();
     m_connected = false;
@@ -313,6 +333,25 @@ void NetworkClient::handlePingResponse(uint32_t hash) noexcept
         static_cast<int>(elapsedMs),
         std::memory_order_relaxed
     );
+}
+
+std::int64_t NetworkClient::connectedDurationSeconds() const noexcept
+{
+    const std::int64_t connectedAtMs =
+        m_connectedAtMs.load(std::memory_order_acquire);
+
+    if (connectedAtMs < 0)
+        return -1;
+
+    const std::int64_t nowMs =
+        std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()
+        ).count();
+
+    if (nowMs < connectedAtMs)
+        return 0;
+
+    return (nowMs - connectedAtMs) / 1000;
 }
 
 void NetworkClient::sendNick()

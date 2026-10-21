@@ -1,8 +1,10 @@
+
 #include "GameHUD.h"
 
 #include <algorithm>
 #include <sstream>
 #include <string>
+
 #include "../FrameProfiler.h"
 
 GameHUD::GameHUD(
@@ -15,8 +17,7 @@ GameHUD::GameHUD(
     Shader& chatSkinShader,
     SkinMesh& skinMesh,
     SkinManager& skinManager,
-    UiFont& chatFont,
-    UiTextRenderer& chatTextRenderer,
+    UiFonts& uiFonts,
     UserSkinDatabase& userSkinDatabase
 )
     : uiPanel(uiPanel),
@@ -25,17 +26,18 @@ GameHUD::GameHUD(
     camera(camera),
     world(world),
     gameState(gameState),
+    uiFonts(uiFonts),
     leaderboardHUD(
         uiPanel,
-        textRenderer,
-        font,
+        skinMesh,
+        uiFonts.renderer,
+        uiFonts.leaderboard,
         world
     ),
     playerHUD(
         uiPanel,
-        textRenderer,
-        font,
-        gameState
+        gameState,
+        uiFonts
     ),
     chatHUD(
         uiPanel,
@@ -45,12 +47,9 @@ GameHUD::GameHUD(
         chatSkinShader,
         skinMesh,
         skinManager,
-        chatFont,
-        chatTextRenderer,
+        uiFonts,
         userSkinDatabase
-    ),
-    chatFont(chatFont),
-    chatTextRenderer(chatTextRenderer)
+    )
 {
 }
 
@@ -62,10 +61,16 @@ void GameHUD::draw(
     float screenH,
     double fps,
     int pingMs,
-    const std::string& serverInfoText
+    std::int64_t serverSessionSeconds,
+    const std::string& serverInfoText,
+    uint8_t gameMode
 )
 {
     textRenderer.begin();
+
+    // --------------------------------------------------------
+    // Leaderboard
+    // --------------------------------------------------------
 
     {
         FrameProfiler::ScopedTimer timer(
@@ -73,8 +78,26 @@ void GameHUD::draw(
             FrameProfiler::Leaderboard
         );
 
-        leaderboardHUD.draw(ownedIds, screenW, screenH);
+        uiFonts.renderer.begin();
+
+        leaderboardHUD.draw(
+            ownedIds,
+            screenW,
+            screenH,
+            gameMode
+        );
+
+        // Таблица лидеров использует собственный атлас шрифта.
+        uiFonts.renderer.flush(
+            uiFonts.leaderboard,
+            screenW,
+            screenH
+        );
     }
+
+    // --------------------------------------------------------
+    // Chat
+    // --------------------------------------------------------
 
     {
         FrameProfiler::ScopedTimer timer(
@@ -90,6 +113,10 @@ void GameHUD::draw(
         );
     }
 
+    // --------------------------------------------------------
+    // Player HUD, FPS + Ping, server realtime info
+    // --------------------------------------------------------
+
     {
         FrameProfiler::ScopedTimer timer(
             profiler,
@@ -103,9 +130,14 @@ void GameHUD::draw(
             screenH,
             fps,
             pingMs,
+            serverSessionSeconds,
             serverInfoText
         );
     }
+
+    // --------------------------------------------------------
+    // Finish legacy text renderer
+    // --------------------------------------------------------
 
     {
         FrameProfiler::ScopedTimer timer(

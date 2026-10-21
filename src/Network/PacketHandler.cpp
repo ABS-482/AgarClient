@@ -4,6 +4,9 @@
 #include <array>
 #include <cmath>
 #include <iostream>
+#include <optional>
+#include <stdexcept>
+#include <limits>
 
 #include "../Network/NetworkClient.h"
 
@@ -53,6 +56,10 @@ void PacketHandler::handleMessage(const uint8_t* data, size_t size)
     
         case 64:
             handleMapBounds(reader);
+            break;
+
+        case 90:
+            handleServerUptime(reader);
             break;
 
         case 96:
@@ -139,6 +146,82 @@ void PacketHandler::handleGameMode(PacketReader& reader)
     if (m_networkClient)
     {
         m_networkClient->setGameMode(gameMode);
+    }
+}
+
+void PacketHandler::handleServerUptime(PacketReader& reader)
+{
+    if (reader.remaining() < 16)
+    {
+        throw std::out_of_range(
+            "Opcode 90: expected at least two doubles"
+        );
+    }
+
+    const double uptimeSeconds = reader.readFloat64LE();
+    const double playersOnlineValue = reader.readFloat64LE();
+
+    if (!std::isfinite(uptimeSeconds) ||
+        !std::isfinite(playersOnlineValue) ||
+        uptimeSeconds < 0.0 ||
+        uptimeSeconds > 1.0e9 ||
+        playersOnlineValue < 0.0 ||
+        playersOnlineValue > 1.0e7)
+    {
+        throw std::runtime_error(
+            "Opcode 90: invalid uptime or playersOnline"
+        );
+    }
+
+    const int uptimeMinutes =
+        static_cast<int>(uptimeSeconds / 60.0 + 1.0);
+
+    const int playersOnline =
+        static_cast<int>(playersOnlineValue);
+
+    std::optional<int> totalCells;
+    std::optional<int> totalMass;
+
+    if (reader.remaining() >= 8)
+    {
+        const double value = reader.readFloat64LE();
+
+        if (std::isfinite(value) &&
+            value >= 0.0 &&
+            value <= 1.0e9)
+        {
+            totalCells = static_cast<int>(value);
+        }
+    }
+
+    if (reader.remaining() >= 8)
+    {
+        const double value = reader.readFloat64LE();
+
+        if (std::isfinite(value) &&
+            value >= 0.0 &&
+            value <= 1.0e12)
+        {
+            totalMass = static_cast<int>(value);
+        }
+    }
+
+    if (!m_networkClient)
+        return;
+
+    m_networkClient->setServerRealtimeBase(
+        playersOnline,
+        uptimeMinutes
+    );
+
+    if (totalCells.has_value())
+    {
+        m_networkClient->setServerTotalCells(*totalCells);
+    }
+
+    if (totalMass.has_value())
+    {
+        m_networkClient->setServerTotalMass(*totalMass);
     }
 }
 
@@ -261,7 +344,10 @@ void PacketHandler::handleUsersList(PacketReader& reader)
         users.push_back(std::move(entry));
     }
 
-    // Легаси-формат: доп. поля встроены прямо в имя, через ":::".
+
+    // Legacy format, identical to Java:
+    // 4 fields: name:::level:::userType:::urlId
+    // 5 fields: name:::level:::userType:::urlId:::seasonLevel
     for (auto& user : users)
     {
         if (user.name.find(":::") == std::string::npos)
@@ -272,8 +358,16 @@ void PacketHandler::handleUsersList(PacketReader& reader)
 
         for (;;)
         {
-            size_t pos = user.name.find(":::", start);
-            parts.push_back(user.name.substr(start, pos - start));
+            const size_t pos = user.name.find(":::", start);
+
+            parts.push_back(
+                user.name.substr(
+                    start,
+                    pos == std::string::npos
+                    ? std::string::npos
+                    : pos - start
+                )
+            );
 
             if (pos == std::string::npos)
                 break;
@@ -281,32 +375,73 @@ void PacketHandler::handleUsersList(PacketReader& reader)
             start = pos + 3;
         }
 
-        if (parts.size() == 4 || parts.size() == 5)
+        if (parts.size() != 4 && parts.size() != 5)
+            continue;
+
+        // Field 0: player name.
+        user.name = parts[0];
+
+        // A four-field entry has no seasonal level.
+        user.hasSeason = false;
+
+        // Field 1: regular level.
+        try
         {
-            user.name = parts[0];
+            const int level = std::stoi(parts[1]);
 
-            try { user.userLevel = static_cast<uint16_t>(std::stoi(parts[1])); }
-            catch (...) {}
-
-            if (!parts[2].empty())
-                user.userType = static_cast<uint8_t>(parts[2][0]);
-
-            try { user.urlId = static_cast<uint32_t>(std::stoul(parts[3])); }
-            catch (...) {}
-
-            if (parts.size() == 5)
+            if (level >= 0 &&
+                level <= std::numeric_limits<uint16_t>::max())
             {
-                try
+                user.userLevel = static_cast<uint16_t>(level);
+            }
+        }
+        catch (...)
+        {
+        }
+
+        // Field 2 (userType) is intentionally ignored,
+        // matching the Java text parser.
+
+        // Field 3: URL ID.
+        try
+        {
+            const unsigned long long urlId =
+                std::stoull(parts[3]);
+
+            if (urlId <= std::numeric_limits<uint32_t>::max())
+            {
+                user.urlId = static_cast<uint32_t>(urlId);
+            }
+        }
+        catch (...)
+        {
+        }
+
+        // Field 4: seasonal level, present only in the 5-field format.
+        if (parts.size() == 5)
+        {
+            try
+            {
+                const int seasonLevel = std::stoi(parts[4]);
+
+                if (seasonLevel >= 0 &&
+                    seasonLevel <= std::numeric_limits<uint16_t>::max())
                 {
-                    user.userLevelSeason = static_cast<uint16_t>(std::stoi(parts[4]));
+                    user.userLevelSeason =
+                        static_cast<uint16_t>(seasonLevel);
+
                     user.hasSeason = true;
                 }
-                catch (...) {}
+            }
+            catch (...)
+            {
+                user.hasSeason = false;
             }
         }
     }
 
-    // Опциональный бинарный блок — если есть, ПЕРЕЗАПИСЫВАЕТ поля выше.
+    // Optional binary block follows below.
+
     if (reader.hasMore())
     {
         uint32_t entryCount = reader.readUint32LE();
@@ -326,7 +461,7 @@ void PacketHandler::handleUsersList(PacketReader& reader)
         for (uint32_t i = 0; i < entryCount && i < users.size() && version != 0; ++i)
         {
             users[i].userLevel = reader.readUint16LE();
-            users[i].userType = reader.readUint8();
+            (void)reader.readUint8();
             users[i].urlId = reader.readUint32LE();
 
             if (version == 2)

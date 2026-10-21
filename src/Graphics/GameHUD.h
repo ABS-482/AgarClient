@@ -1,3 +1,4 @@
+
 #pragma once
 
 #include <cstdint>
@@ -12,6 +13,7 @@
 #include "Shader.h"
 #include "SkinManager.h"
 #include "SkinMesh.h"
+
 #include "../UI/HUD/LeaderboardHUD.h"
 #include "../UI/HUD/PlayerHUD.h"
 #include "../UI/HUD/ChatHUD.h"
@@ -19,8 +21,7 @@
 #include "../Game/GameState.h"
 #include "../Game/RenderState.h"
 #include "../Game/World.h"
-#include "../Fonts/UiFont.h"
-#include "../Fonts/UiTextRenderer.h"
+#include "../Fonts/UiFonts.h"
 
 class UserSkinDatabase;
 class FrameProfiler;
@@ -38,8 +39,7 @@ public:
         Shader& chatSkinShader,
         SkinMesh& skinMesh,
         SkinManager& skinManager,
-        UiFont& chatFont,
-        UiTextRenderer& chatTextRenderer,
+        UiFonts& uiFonts,
         UserSkinDatabase& userSkinDatabase
     );
 
@@ -51,7 +51,9 @@ public:
         float screenH,
         double fps,
         int pingMs,
-        const std::string& serverInfoText
+        std::int64_t serverSessionSeconds,
+        const std::string& serverInfoText,
+        uint8_t gameMode
     );
 
 private:
@@ -62,9 +64,9 @@ private:
     World& world;
     GameState& gameState;
 
+    UiFonts& uiFonts;
+
     LeaderboardHUD leaderboardHUD;
     PlayerHUD playerHUD;
     ChatHUD chatHUD;
-    UiFont& chatFont;
-    UiTextRenderer& chatTextRenderer;
 };

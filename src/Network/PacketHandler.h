@@ -46,6 +46,7 @@ private:
     void handleChatMessage(PacketReader& reader, bool isPrivate);
     void handleDelayedNickRequest(PacketReader& reader);
     void handleGameMode(PacketReader& reader);
+    void handleServerUptime(PacketReader& reader);
 
     int m_serverProtocol;
     World& m_world;

@@ -1,23 +1,23 @@
+
 #include "PlayerHUD.h"
 
+#include <algorithm>
 #include <sstream>
 #include <string>
+#include <iomanip>
 
 #include "../../Graphics/UIPanel.h"
-#include "../../Graphics/TextRenderer.h"
-#include "../../Graphics/Font.h"
 #include "../../Game/GameState.h"
+#include "../../Fonts/UiFonts.h"
 
 PlayerHUD::PlayerHUD(
     UIPanel& uiPanel,
-    TextRenderer& textRenderer,
-    Font& font,
-    GameState& gameState
+    GameState& gameState,
+    UiFonts& uiFonts
 )
     : uiPanel(uiPanel),
-    textRenderer(textRenderer),
-    font(font),
-    gameState(gameState)
+    gameState(gameState),
+    uiFonts(uiFonts)
 {
 }
 
@@ -28,9 +28,14 @@ void PlayerHUD::draw(
     float screenH,
     double fps,
     int pingMs,
+    std::int64_t serverSessionSeconds,
     const std::string& serverInfoText
 )
 {
+    // --------------------------------------------------------
+    // Player statistics
+    // --------------------------------------------------------
+
     if (!ownedIds.empty())
     {
         const auto firstRsIt =
@@ -61,48 +66,29 @@ void PlayerHUD::draw(
             << ownedIds.size()
             << ")";
 
-        const std::string hudText =
-            hudStream.str();
+        const std::string hudText = hudStream.str();
 
-        // --------------------------------------------------------
-        // Typography
-        // --------------------------------------------------------
-
-        constexpr float hudFontScale =
-            20.0f / 70.0f;
-
-        const float textWidthPx =
-            font.measureWidth(hudText) *
-            hudFontScale;
-
+        constexpr float hudFontScale = 1.0f;
         constexpr float paddingX = 14.0f;
         constexpr float panelHeight = 40.0f;
 
-        const float panelWidth =
-            textWidthPx +
-            paddingX * 2.0f;
+        const float textWidthPx =
+            uiFonts.playerStats.measureWidth(hudText) *
+            hudFontScale;
 
-        // --------------------------------------------------------
-        // Position
-        // --------------------------------------------------------
+        const float panelWidth =
+            textWidthPx + paddingX * 2.0f;
 
         constexpr float marginLeft = 10.0f;
         constexpr float marginBottom = 10.0f;
 
         const float panelCenterX =
-            marginLeft +
-            panelWidth * 0.5f;
+            marginLeft + panelWidth * 0.5f;
 
         const float panelCenterY =
             screenH -
             marginBottom -
             panelHeight * 0.5f;
-
-        // --------------------------------------------------------
-        // Dark strict panel
-        // background: rgba(0, 0, 0, .30)
-        // border:     rgba(255, 255, 255, .15)
-        // --------------------------------------------------------
 
         uiPanel.draw(
             panelCenterX,
@@ -111,75 +97,121 @@ void PlayerHUD::draw(
             panelHeight,
             10.0f,
 
-            // background
-            0.0f,
-            0.0f,
-            0.0f,
-            0.30f,
+            // Background
+            0.0f, 0.0f, 0.0f, 0.30f,
 
-            // border
-            1.0f,
-            1.0f,
-            1.0f,
-            0.15f,
+            // Border
+            1.0f, 1.0f, 1.0f, 0.15f,
 
             1.0f,
-
             screenW,
             screenH
         );
 
-        textRenderer.addTextLeftAligned(
-            font,
+        const float hudTextTopY =
+            panelCenterY -
+            uiFonts.playerStats.lineHeight() *
+            hudFontScale * 0.5f;
+
+        uiFonts.renderer.add(
+            uiFonts.playerStats,
             hudText,
             marginLeft + paddingX,
-            panelCenterY,
+            hudTextTopY,
+            1.0f,
+            1.0f,
+            1.0f,
+            1.0f,
             hudFontScale
+        );
+
+        uiFonts.renderer.flush(
+            uiFonts.playerStats,
+            screenW,
+            screenH
         );
     }
 
     // --------------------------------------------------------
-// FPS + Ping
-// --------------------------------------------------------
+    // FPS + Ping
+    // --------------------------------------------------------
 
     std::ostringstream performanceStream;
 
-    performanceStream
-        << "FPS: "
-        << static_cast<int>(fps + 0.5)
-        << " Ping: ";
+    // Сначала время подключения.
+    performanceStream << "time:";
 
-    if (pingMs >= 0)
+    if (serverSessionSeconds >= 0)
     {
-        performanceStream << pingMs << " ms";
+        const std::int64_t hours =
+            serverSessionSeconds / 3600;
+
+        const std::int64_t minutes =
+            (serverSessionSeconds % 3600) / 60;
+
+        const std::int64_t seconds =
+            serverSessionSeconds % 60;
+
+        performanceStream
+            << std::setfill('0')
+            << std::setw(2) << hours << ':'
+            << std::setw(2) << minutes << ':'
+            << std::setw(2) << seconds;
     }
     else
     {
-        performanceStream << "--";
+        performanceStream << "--:--:--";
     }
+
+    // Затем FPS и Ping.
+    performanceStream
+        << " FPS:"
+        << static_cast<int>(fps + 0.5)
+        << " Ping:";
+
+    if (pingMs >= 0)
+        performanceStream << pingMs << " ms";
+    else
+        performanceStream << "--";
 
     const std::string performanceText =
         performanceStream.str();
 
-    constexpr float performanceFontScale =
-        20.0f / 70.0f;
+    constexpr float performanceFontScale = 1.0f;
+    constexpr float performanceMarginRight = 10.0f;
 
     const float performanceTextWidth =
-        font.measureWidth(performanceText) *
+        uiFonts.performance.measureWidth(performanceText) *
         performanceFontScale;
 
-    const float performancePanelWidth =
-        performanceTextWidth + 10.0f;
+    const float performanceTextX =
+        screenW -
+        performanceMarginRight -
+        performanceTextWidth;
 
+    constexpr float performanceTextTopY = 2.0f;
+
+    uiFonts.renderer.add(
+        uiFonts.performance,
+        performanceText,
+        performanceTextX,
+        performanceTextTopY,
+        62.0f / 255.0f,
+        117.0f / 255.0f,
+        178.0f / 255.0f,
+        1.0f,
+        performanceFontScale
+    );
+
+    uiFonts.renderer.flush(
+        uiFonts.performance,
+        screenW,
+        screenH
+    );
+
+    // Сохраняем прежний вертикальный ориентир realtimeinfo.
     constexpr float performancePanelHeight = 34.0f;
 
-    const float performancePanelCenterX =
-        screenW -
-        10.0f -
-        performancePanelWidth * 0.5f;
-
-    // Немного поднимаем панель, чтобы освободить место
-    // для информации о сервере под ней.
     const float performancePanelCenterY =
         screenH -
         10.0f -
@@ -189,95 +221,55 @@ void PlayerHUD::draw(
         16.0f;
 
     // --------------------------------------------------------
-    // Панель FPS + Ping
-    // --------------------------------------------------------
-
-    uiPanel.draw(
-        performancePanelCenterX,
-        performancePanelCenterY,
-        performancePanelWidth,
-        performancePanelHeight,
-        10.0f,
-
-        // Background
-        0.0f,
-        0.0f,
-        0.0f,
-        0.30f,
-
-        // Border
-        1.0f,
-        1.0f,
-        1.0f,
-        0.15f,
-
-        1.0f,
-
-        screenW,
-        screenH
-    );
-
-    textRenderer.addTextLeftAligned(
-        font,
-        performanceText,
-        performancePanelCenterX -
-        performancePanelWidth * 0.5f +
-        5.0f,
-        performancePanelCenterY,
-        performanceFontScale
-    );
-
-    // --------------------------------------------------------
-    // Информация о сервере под FPS + Ping
+    // Server realtime info
     // --------------------------------------------------------
 
     if (!serverInfoText.empty())
     {
-        constexpr float marginRight = 10.0f;
-        constexpr float serverInfoFontScaleDefault =
-            15.0f / 70.0f;
+        constexpr float marginRight = 2.0f;
+        constexpr float serverInfoFontScale = 1.0f;
 
-        float serverInfoFontScale =
-            serverInfoFontScaleDefault;
-
-        float serverInfoTextWidth =
-            font.measureWidth(serverInfoText) *
-            serverInfoFontScale;
-
-        // Уменьшаем текст, если он не помещается по ширине.
         const float availableWidth =
-            screenW - marginRight * 2.0f;
+            std::max(0.0f, screenW - marginRight * 2.0f);
 
-        if (serverInfoTextWidth > availableWidth &&
-            serverInfoTextWidth > 0.0f)
-        {
-            serverInfoFontScale *=
-                availableWidth / serverInfoTextWidth;
+        const float naturalTextWidth =
+            uiFonts.serverInfo.measureWidth(serverInfoText);
 
-            serverInfoTextWidth =
-                font.measureWidth(serverInfoText) *
-                serverInfoFontScale;
-        }
+        const float measuredWidth =
+            naturalTextWidth * serverInfoFontScale;
+
+        const float actualScale =
+            measuredWidth > availableWidth && measuredWidth > 0.0f
+            ? serverInfoFontScale * availableWidth / measuredWidth
+            : serverInfoFontScale;
+
+        const float serverInfoTextWidth =
+            naturalTextWidth * actualScale;
 
         const float serverInfoX =
-            screenW -
-            marginRight -
-            serverInfoTextWidth;
+            screenW - marginRight - serverInfoTextWidth;
 
-        const float serverInfoY =
+        const float serverInfoTopY =
             performancePanelCenterY +
             performancePanelHeight * 0.5f +
-            13.0f;
+            11.0f;
 
-        textRenderer.addTextLeftAlignedColored(
-            font,
+        uiFonts.renderer.add(
+            uiFonts.serverInfo,
             serverInfoText,
             serverInfoX,
-            serverInfoY,
-            serverInfoFontScale,
+            serverInfoTopY,
+            62.0f / 255.0f,
+            117.0f / 255.0f,
+            178.0f / 255.0f,
             1.0f,
-            1.0f,
-            1.0f
+            actualScale
+        );
+
+        uiFonts.renderer.flush(
+            uiFonts.serverInfo,
+            screenW,
+            screenH
         );
     }
 }
