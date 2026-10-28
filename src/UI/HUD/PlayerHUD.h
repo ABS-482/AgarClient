@@ -13,13 +13,15 @@ class Font;
 class GameState;
 class UiFonts;
 
+class Camera;
 class PlayerHUD
 {
 public:
     PlayerHUD(
         UIPanel& uiPanel,
         GameState& gameState,
-        UiFonts& uiFonts
+        UiFonts& uiFonts,
+        Camera& camera
     );
 
     void draw(
@@ -30,11 +32,13 @@ public:
         double fps,
         int pingMs,
         std::int64_t serverSessionSeconds,
-        const std::string& serverInfoText
+        const std::string& serverInfoText,
+        uint8_t gameMode
     );
 
 private:
     UIPanel& uiPanel;
     UiFonts& uiFonts;
     GameState& gameState;
+    Camera& camera;
 };

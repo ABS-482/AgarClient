@@ -3,6 +3,7 @@
 #include "PlayerColors.h"
 #include "../VirusGuard/VirusGuard.h"
 #include "../FrameProfiler.h"
+#include "../Network/UserSkinDatabase.h"
 
 #include <algorithm>
 #include <chrono>
@@ -51,7 +52,8 @@ GameRenderer::GameRenderer(
     SkinManager& skinManager,
     TextRenderer& textRenderer,
     Font& font,
-    Camera& camera
+    Camera& camera,
+    UserSkinDatabase& userSkinDatabase
 )
     : circleShader(circleShader),
     skinShader(skinShader),
@@ -60,6 +62,7 @@ GameRenderer::GameRenderer(
     skinMesh(skinMesh),
     foodRenderer(foodRenderer),
     skinManager(skinManager),
+    userSkinDatabase(userSkinDatabase),
     textRenderer(textRenderer),
     font(font),
     camera(camera),
@@ -141,12 +144,22 @@ GameRenderer::GameRenderer(
 
 void GameRenderer::updateRenderStates(
     const WorldSnapshot& blobs,
-    std::unordered_map<uint32_t, RenderState>& renderStates
+    std::unordered_map<uint32_t, RenderState>& renderStates,
+    float segDuration
 )
 {
     for (const auto& [id, blob] : *blobs)
     {
+        // Еда рисуется отдельным статическим GPU-буфером.
+        // RenderState для неё создавать не нужно.
+        if (blob.cellType == CellType::Food)
+            continue;
+
         RenderState& rs = renderStates[id];
+
+        // ----------------------------------------------------
+        // Первичная инициализация клетки.
+        // ----------------------------------------------------
 
         if (!rs.initialized)
         {
@@ -171,60 +184,101 @@ void GameRenderer::updateRenderStates(
 
             rs.rawX = blob.targetX;
             rs.rawY = blob.targetY;
+
             rs.vx = 0.0f;
             rs.vy = 0.0f;
 
             rs.targetSize = blob.targetSize;
             rs.radiusDelta = 0.8f;
+
             rs.moveTimer = 0.0f;
-            rs.updateInterval = 0.04f;
-            rs.lerpDuration = 0.12f;
+            rs.positionElapsed = 0.0f;
+
+            rs.updateInterval = 0.05f;
+            rs.lerpDuration = std::clamp(segDuration, 0.03f, 0.12f);
 
             rs.lastSeenUpdate = blob.lastUpdateTime;
             rs.lastCellType = blob.cellType;
+
             rs.initialized = true;
 
             continue;
         }
 
+        // ----------------------------------------------------
+        // Пришло новое серверное обновление.
+        //
+        // Аналог Java Blob.moveToPosition():
+        // текущая отображаемая позиция становится началом
+        // нового движения, а таймер сбрасывается.
+        // ----------------------------------------------------
+
         if (blob.lastUpdateTime != rs.lastSeenUpdate)
         {
-            rs.updatePos(blob.lastUpdateTime);
-
+            // Начальная точка — последняя отображаемая позиция.
             rs.ox = rs.x;
             rs.oy = rs.y;
             rs.oSize = rs.size;
 
+            // Новая серверная цель.
             rs.nx = blob.targetX;
             rs.ny = blob.targetY;
             rs.nSize = blob.targetSize;
 
+            // Сохраняем timestamp для отслеживания обновлений
+            // и совместимости с остальным кодом.
+            // Прогресс движения от него больше не зависит.
             rs.updateTime = blob.lastUpdateTime;
 
-            rs.targetSize = blob.targetSize;
+            // Каждое новое перемещение начинается заново.
+            rs.positionElapsed = 0.0f;
+            rs.moveTimer = 0.0f;
+
+            // Отдельное сглаживание размера.
+            rs.setTargetSize(blob.targetSize);
+
             rs.lastSeenUpdate = blob.lastUpdateTime;
             rs.lastCellType = blob.cellType;
 
+            // Старые поля оставляем для совместимости.
             rs.serverMoveX = rs.ox;
             rs.serverMoveY = rs.oy;
+
             rs.serverPosX = rs.nx;
             rs.serverPosY = rs.ny;
 
             rs.rawX = rs.nx;
             rs.rawY = rs.ny;
+
             rs.vx = 0.0f;
             rs.vy = 0.0f;
-            rs.moveTimer = 0.0f;
-            rs.lerpDuration = 0.12f;
+
+            rs.lerpDuration = std::clamp(
+                segDuration,
+                0.03f,
+                0.12f
+            );
         }
     }
 
-    for (auto it = renderStates.begin(); it != renderStates.end(); )
+    // --------------------------------------------------------
+    // Удаляем состояния клеток, которых больше нет в мире.
+    // --------------------------------------------------------
+
+    for (auto it = renderStates.begin();
+        it != renderStates.end();)
     {
-        if (blobs->find(it->first) == blobs->end())
+        const auto blobIt = blobs->find(it->first);
+
+        if (blobIt == blobs->end() ||
+            blobIt->second.cellType == CellType::Food)
+        {
             it = renderStates.erase(it);
+        }
         else
+        {
             ++it;
+        }
     }
 }
 
@@ -238,19 +292,26 @@ static int getBlobMass(const Blob& blob)
 }
 
 void GameRenderer::updatePositions(
-    std::unordered_map<uint32_t, RenderState>& renderStates)
+    std::unordered_map<uint32_t, RenderState>& renderStates,
+    float deltaTime
+)
 {
-    const auto now = std::chrono::steady_clock::now();
+    if (deltaTime <= 0.0f)
+        return;
 
     for (auto& [id, rs] : renderStates)
     {
-        if (rs.initialized)
-            rs.updatePos(now);
+        if (!rs.initialized)
+            continue;
+
+        rs.updatePos(deltaTime);
+        rs.updateRadius(deltaTime);
     }
 }
 
 void GameRenderer::draw(
     const WorldSnapshot& blobs,
+    std::uint64_t foodVersion,
     const std::vector<uint32_t>& ownedIds,
     std::unordered_map<uint32_t, RenderState>& renderStates,
     float screenW,
@@ -304,6 +365,46 @@ void GameRenderer::draw(
                 targetWorldX,
                 targetWorldY
             );
+    }
+
+    // --------------------------------------------------------
+// Статическая еда: загружаем в GPU только при изменении.
+// --------------------------------------------------------
+
+    if (!m_staticFoodInitialized ||
+        m_foodVersionDrawn != foodVersion)
+    {
+        m_staticFood.clear();
+        m_staticFood.reserve(blobs->size() * 7);
+
+        for (const auto& [id, blob] : *blobs)
+        {
+            if (blob.cellType != CellType::Food)
+                continue;
+
+            const RGB rgb = getPlayerColor(blob.colorIndex);
+
+            m_staticFood.insert(
+                m_staticFood.end(),
+                {
+                    blob.targetX,
+                    blob.targetY,
+                    blob.targetSize,
+                    rgb.r / 255.0f,
+                    rgb.g / 255.0f,
+                    rgb.b / 255.0f,
+                    0.95f
+                }
+            );
+        }
+
+        foodRenderer.uploadStatic(
+            m_staticFood.data(),
+            m_staticFood.size() / 7
+        );
+
+        m_foodVersionDrawn = foodVersion;
+        m_staticFoodInitialized = true;
     }
 
     int myMass = 0;
@@ -375,30 +476,39 @@ void GameRenderer::draw(
             }
         }
 
-        // Подготавливаем списки отрисовки.
+        // --------------------------------------------------------
+// Подготавливаем динамические списки отрисовки.
+// Еда обслуживается отдельно через статический буфер.
+// --------------------------------------------------------
+
         drawList.clear();
         drawList.reserve(blobs->size());
 
-        foodInstanceData.clear();
-        foodInstanceData.reserve(
-            blobs->size() * 7
-        );
+        dynamicInstanceData.clear();
+        dynamicInstanceData.reserve(blobs->size() * 7);
 
         for (const auto& [id, blob] : *blobs)
         {
-            RenderState& rs =
-                renderStates[id];
+            if (blob.cellType == CellType::Food)
+                continue;
 
-            if (
-                blob.cellType == CellType::Food ||
-                blob.cellType == CellType::EjectedMass
-                )
+            const auto rsIt = renderStates.find(id);
+
+            // Не создаём пустые RenderState при отрисовке.
+            if (rsIt == renderStates.end() ||
+                !rsIt->second.initialized)
             {
-                RGB rgb =
-                    getPlayerColor(blob.colorIndex);
+                continue;
+            }
 
-                foodInstanceData.insert(
-                    foodInstanceData.end(),
+            RenderState& rs = rsIt->second;
+
+            if (blob.cellType == CellType::EjectedMass)
+            {
+                const RGB rgb = getPlayerColor(blob.colorIndex);
+
+                dynamicInstanceData.insert(
+                    dynamicInstanceData.end(),
                     {
                         rs.x,
                         rs.y,
@@ -503,8 +613,8 @@ void GameRenderer::draw(
                 b = rgb.b / 255.0f;
             }
 
-            foodInstanceData.insert(
-                foodInstanceData.end(),
+            dynamicInstanceData.insert(
+                dynamicInstanceData.end(),
                 {
                     rs.x,
                     rs.y,
@@ -524,18 +634,21 @@ void GameRenderer::draw(
             FrameProfiler::GameRenderShaderSetup
         );
 
-        // Настройка circle shader
+        // --------------------------------------------------------
+// Настройка circle shader
+// --------------------------------------------------------
+
         circleShader.use();
 
         circleShader.setVec2(
             uCameraPos,
-            camera.offsetX,
-            camera.offsetY
+            camera.pos.x,
+            camera.pos.y
         );
 
         circleShader.setFloat(
             uZoom,
-            camera.ratio
+            camera.zoom
         );
 
         circleShader.setVec2(
@@ -546,22 +659,25 @@ void GameRenderer::draw(
 
         circleShader.setVec2(
             uViewportSize,
-            screenW,
-            screenH
+            camera.vw,
+            camera.vh
         );
 
+        // --------------------------------------------------------
         // Настройка skin shader
+        // --------------------------------------------------------
+
         skinShader.use();
 
         skinShader.setVec2(
             skinCameraPos,
-            camera.offsetX,
-            camera.offsetY
+            camera.pos.x,
+            camera.pos.y
         );
 
         skinShader.setFloat(
             skinZoom,
-            camera.ratio
+            camera.zoom
         );
 
         skinShader.setVec2(
@@ -572,22 +688,25 @@ void GameRenderer::draw(
 
         skinShader.setVec2(
             skinViewportSize,
-            screenW,
-            screenH
+            camera.vw,
+            camera.vh
         );
 
+        // --------------------------------------------------------
         // Настройка instanced food shader
+        // --------------------------------------------------------
+
         circleInstancedShader.use();
 
         circleInstancedShader.setVec2(
             iCameraPos,
-            camera.offsetX,
-            camera.offsetY
+            camera.pos.x,
+            camera.pos.y
         );
 
         circleInstancedShader.setFloat(
             iZoom,
-            camera.ratio
+            camera.zoom
         );
 
         circleInstancedShader.setVec2(
@@ -598,8 +717,8 @@ void GameRenderer::draw(
 
         circleInstancedShader.setVec2(
             iViewportSize,
-            screenW,
-            screenH
+            camera.vw,
+            camera.vh
         );
     }
 
@@ -609,9 +728,13 @@ void GameRenderer::draw(
             FrameProfiler::GameRenderInstanced
         );
 
+        // Статическая еда не загружается повторно каждый кадр.
+        foodRenderer.drawStatic();
+
+        // Динамические круги обновляются отдельно.
         foodRenderer.draw(
-            foodInstanceData.data(),
-            foodInstanceData.size() / 7
+            dynamicInstanceData.data(),
+            dynamicInstanceData.size() / 7
         );
     }
 
@@ -912,7 +1035,13 @@ void GameRenderer::draw(
                 }
 
                 // Имя
-                if (showText && hasName)
+                const bool hideName =
+                    blob.cellType == CellType::Player &&
+                    showText &&
+                    hasName &&
+                    userSkinDatabase.isInvisibleNick(blob.name);
+
+                if (showText && hasName && !hideName)
                 {
                     float screenX;
                     float screenY;
@@ -926,7 +1055,8 @@ void GameRenderer::draw(
 
                     const float nameSize = textBaseSize;
 
-                    const float fontScale = (nameSize * camera.ratio) / 70.0f;
+                    const float fontScale =
+                        (nameSize * camera.scaleX()) / 70.0f;
 
                     textRenderer.addText(
                         font,
@@ -975,7 +1105,7 @@ void GameRenderer::draw(
                     );
 
                     const float massFontScale =
-                        (massFontSize * camera.ratio) / 70.0f;
+                        (massFontSize * camera.scaleX()) / 70.0f;
 
                     textRenderer.addText(
                         font,

@@ -3,41 +3,64 @@
 
 void World::updateFoodBlob(
     uint32_t id,
-    int16_t x,
-    int16_t y,
-    int8_t size,
+    uint16_t x,
+    uint16_t y,
+    uint8_t size,
     uint8_t colorIndex,
     uint8_t cellType,
     std::chrono::steady_clock::time_point updateTime
 )
 {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    check();
+
+    const float newX = static_cast<float>(x);
+    const float newY = static_cast<float>(y);
+    const float newSize = static_cast<float>(size);
+    const CellType newCellType =
+        static_cast<CellType>(cellType);
 
     auto [it, inserted] = m_blobs.try_emplace(id);
     Blob& blob = it->second;
 
-    blob.id = id;
-    blob.targetX = static_cast<float>(x);
-    blob.targetY = static_cast<float>(y);
-    blob.targetSize = static_cast<float>(size);
-    blob.lastUpdateTime =
-        updateTime;
+    const bool wasFood =
+        !inserted && blob.cellType == CellType::Food;
 
-    blob.cellType = static_cast<CellType>(cellType);
+    // Перестраивать статическую еду нужно только тогда,
+    // когда меняются её видимые данные или тип сущности.
+    const bool foodVisualChanged =
+        (wasFood || newCellType == CellType::Food) &&
+        (
+            inserted ||
+            blob.cellType != newCellType ||
+            blob.targetX != newX ||
+            blob.targetY != newY ||
+            blob.targetSize != newSize ||
+            blob.colorIndex != colorIndex
+            );
+
+    blob.id = id;
+    blob.targetX = newX;
+    blob.targetY = newY;
+    blob.targetSize = newSize;
+    blob.lastUpdateTime = updateTime;
+
+    blob.cellType = newCellType;
     blob.colorIndex = colorIndex;
     blob.sticker = 0;
     blob.skin = 0;
     blob.isVirus = false;
     blob.flags = 0;
 
+    if (foodVisualChanged)
+        ++m_foodVersion;
+
     ++m_version;
 }
-
 void World::updateVirusBlob(
     uint32_t id,
     uint16_t x,
     uint16_t y,
-    int16_t size,
+    uint16_t size,
     int32_t skin,
     uint8_t colorIndex,
     uint8_t flags,
@@ -46,7 +69,7 @@ void World::updateVirusBlob(
     std::chrono::steady_clock::time_point updateTime
 )
 {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    check();
 
     auto [it, inserted] = m_blobs.try_emplace(id);
     Blob& blob = it->second;
@@ -77,14 +100,14 @@ void World::updatePlayerBlob(
     uint32_t id,
     uint16_t x,
     uint16_t y,
-    int16_t size,
+    uint16_t size,
     uint8_t flags,
     uint16_t playerID,
     const std::string& name,
     std::chrono::steady_clock::time_point updateTime
 )
 {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    check();
 
     auto [it, inserted] = m_blobs.try_emplace(id);
     Blob& blob = it->second;
@@ -143,31 +166,31 @@ void World::updatePlayerBlob(
 
 void World::setPlayerName(uint16_t playerID, const std::string& name)
 {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    check();
     playerNames[playerID] = name;
 }
 
 void World::setPlayerSkin(uint16_t playerID, uint32_t skin)
 {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    check();
     playerSkins[playerID] = skin;
 }
 
 void World::setPlayerColorIndex(uint16_t playerID, uint8_t colorIndex)
 {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    check();
     playerColorIndexes[playerID] = colorIndex;
 }
 
 void World::setPlayerSticker(uint16_t playerID, uint32_t sticker)
 {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    check();
     playerStickers[playerID] = sticker;
 }
 
 void World::addOwnedBlob(uint32_t id)
 {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    check();
 
     for (uint32_t ownedId : ownedIds)
     {
@@ -180,8 +203,17 @@ void World::addOwnedBlob(uint32_t id)
 
 void World::removeBlob(uint32_t id)
 {
-    std::lock_guard<std::mutex> lock(m_mutex);
-    m_blobs.erase(id);
+    check();
+
+    const auto it = m_blobs.find(id);
+
+    if (it != m_blobs.end())
+    {
+        if (it->second.cellType == CellType::Food)
+            ++m_foodVersion;
+
+        m_blobs.erase(it);
+    }
 
     ownedIds.erase(
         std::remove(ownedIds.begin(), ownedIds.end(), id),
@@ -193,7 +225,7 @@ void World::removeBlob(uint32_t id)
 
 void World::reset()
 {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    check();
 
     m_blobs.clear();
     playerNames.clear();
@@ -209,23 +241,24 @@ void World::reset()
         std::make_shared<const std::vector<LeaderboardEntry>>();
 
     ++m_version;
+    ++m_foodVersion;
 }
 
 void World::setMapBounds(double minX, double minY, double maxX, double maxY)
 {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    check();
     m_mapBounds = { minX, minY, maxX, maxY, true };
 }
 
 World::MapBounds World::getMapBounds() const
 {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    check();
     return m_mapBounds;
 }
 
 void World::addChatMessage(ChatMessage message)
 {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    check();
 
     m_chatMessages.push_back(std::move(message));
 
@@ -241,13 +274,13 @@ void World::addChatMessage(ChatMessage message)
 
 std::vector<ChatMessage> World::getChatMessages() const
 {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    check();
     return m_chatMessages;
 }
 
 World::ChatMessagesView World::getChatMessagesView() const
 {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    check();
 
     if (!m_cachedChatMessages ||
         m_cachedChatMessagesVersion != m_chatMessagesVersion)
@@ -275,13 +308,13 @@ World::getChatMessagesSnapshot() const
 
 std::vector<uint32_t> World::getOwnedIds() const
 {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    check();
     return ownedIds;
 }
 
 void World::removePlayerMeta(uint16_t playerID)
 {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    check();
 
     // В точности как в JS removePidName — sticker НЕ трогаем,
     // там удаляются только name/skin/colorIndex.
@@ -292,15 +325,12 @@ void World::removePlayerMeta(uint16_t playerID)
 
 WorldSnapshot World::snapshot() const
 {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    check();
 
-    if (!m_cachedSnapshot || m_cachedVersion != m_version)
-    {
-        m_cachedSnapshot = std::make_shared<std::unordered_map<uint32_t, Blob>>(m_blobs);
-        m_cachedVersion = m_version;
-    }
-
-    return m_cachedSnapshot;
+    return WorldSnapshot(
+        std::shared_ptr<const std::unordered_map<uint32_t, Blob>>{},
+        & m_blobs
+    );
 }
 
 void World::setLeaderboard(std::vector<LeaderboardEntry> entries)
@@ -310,13 +340,13 @@ void World::setLeaderboard(std::vector<LeaderboardEntry> entries)
             std::move(entries)
         );
 
-    std::lock_guard<std::mutex> lock(m_mutex);
+    check();
     m_leaderboard = std::move(snapshot);
 }
 
 std::shared_ptr<const std::vector<LeaderboardEntry>>
 World::getLeaderboardSnapshot() const
 {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    check();
     return m_leaderboard;
 }

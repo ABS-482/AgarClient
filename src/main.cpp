@@ -234,10 +234,8 @@ static int runGame()
 
     MainMenu mainMenu(
         uiPanel,
-        textRenderer,
+        uiFonts,
         iconRenderer,
-        gmFont,
-        font,
         skinShader,
         skinMesh,
         skinManager,
@@ -294,7 +292,8 @@ static int runGame()
         skinManager,
         textRenderer,
         font,
-        camera
+        camera,
+        userSkinDatabase
     );
 
     VirusGuard virusGuard(world);
@@ -359,7 +358,7 @@ static int runGame()
     );
 
     // World::snapshot() reuses its shared_ptr until the world changes.
-    decltype(world.snapshot()) previousVirusEjectorSnapshot;
+    uint64_t previousVirusEjectorWorldVersion = 0;
     double virusEjectorSnapshotArrival = 0.0;
     bool hasVirusEjectorSnapshotArrival = false;
 
@@ -368,11 +367,6 @@ static int runGame()
     uint32_t loggedCellId = 0;
     bool hadLoggedVirusThreat = false;
     auto lastVirusThreatLog = std::chrono::steady_clock::time_point{};
-
-    network.setPlayerPassword("");
-    network.setNickname("Android Player");
-    network.setPlayerColor(9);
-    
 
     InputManager inputManager;
     InputState input;
@@ -419,6 +413,32 @@ static int runGame()
     bool hadOwnedCells = false;
     bool canRespawn = false;
 
+    // --------------------------------------------------------
+    // ColorPicker — обновление цвета и закрытие меню
+    // --------------------------------------------------------
+
+    mainMenu.setOnPlayerColorSelected(
+        [&network, &world, &menuOpen](int colorIndex)
+        {
+            // Сохраняем выбранный цвет.
+            network.setPlayerColor(
+                static_cast<uint8_t>(colorIndex)
+            );
+
+            // Отправляем цвет, только если WebSocket открыт.
+            // Проверка находится внутри sendPlayerColor().
+            network.sendPlayerColor();
+
+            // Во время игры закрываем всё меню.
+            const auto ownedIds = world.getOwnedIds();
+
+            if (!ownedIds.empty())
+            {
+                menuOpen = false;
+            }
+        }
+    );
+
     auto serverList = ServerListFetcher::fetch();
 
     // Realtime online серверов — обновляет тот же serverList по ссылке,
@@ -429,6 +449,12 @@ static int runGame()
     realtimeInfoClient.connect();
 
     AppState appState = AppState::SelectingServer;
+
+    auto enterPlaying = [&]()
+        {
+            camera.onShow();
+            appState = AppState::Playing;
+        };
 
     // ------------------------------------------------------------
     // Клик "Play" в меню — три случая, как в JS-версии (connn()):
@@ -459,12 +485,20 @@ static int runGame()
 
             network.setNickname(nickname);
             network.setPlayerPassword(mainMenu.playerPassword());
+            network.setPlayerColor(
+                static_cast<uint8_t>(
+                    mainMenu.selectedColorIndex()
+                    )
+            );
 
             const ConnectionMode connectionMode =
                 mainMenu.state().joinMode ==
                 MenuState::JoinMode::Play
                 ? ConnectionMode::Play
                 : ConnectionMode::Spectate;
+
+            camera.spectator =
+                connectionMode == ConnectionMode::Spectate;
 
             if (!network.isConnected())
             {
@@ -484,7 +518,7 @@ static int runGame()
                 );
 
                 canRespawn = false;
-                appState = AppState::Playing;
+                enterPlaying();
             }
             else if (url == network.currentUrl())
             {
@@ -494,14 +528,16 @@ static int runGame()
                 // снова запрашиваем spectator.
                 if (connectionMode == ConnectionMode::Play)
                 {
-                    network.requestPlay();
+                    camera.spectator = false;
+                    network.requestSpawnFromSpectate();
                 }
                 else
                 {
+                    camera.spectator = true;
                     network.requestSpectate();
                 }
 
-                appState = AppState::Playing;
+                enterPlaying();
             }
             else
             {
@@ -518,7 +554,7 @@ static int runGame()
                     connectionMode
                 );
 
-                appState = AppState::Playing;
+                enterPlaying();
             }
 
             menuOpen = false;
@@ -532,19 +568,92 @@ static int runGame()
 
         realtimeInfoClient.update();
 
+        if (appState == AppState::Playing)
+        {
+            network.update();
+            profiler.mark(FrameProfiler::Network);
+        }
+
         input.textInputActive =
             mainMenu.isTextInputActive();
 
         running = inputManager.poll(input);
 
-        // Обработка ввода Nick / Password
+        // Обработка ввода Nick / Password / CH Password
         if (mainMenu.isTextInputActive())
         {
+            // --------------------------------------------------------
+            // Выделение и буфер обмена
+            // --------------------------------------------------------
+
+            if (input.textSelectAllPressed)
+                mainMenu.selectAllText();
+
+            if (input.textCopyPressed && mainMenu.hasTextSelection())
+            {
+                const std::string selected =
+                    mainMenu.selectedText();
+
+                SDL_SetClipboardText(selected.c_str());
+            }
+
+            if (input.textCutPressed && mainMenu.hasTextSelection())
+            {
+                const std::string selected =
+                    mainMenu.selectedText();
+
+                SDL_SetClipboardText(selected.c_str());
+
+                mainMenu.deleteTextSelection();
+            }
+
+            if (input.textPastePressed)
+            {
+                char* clipboardText = SDL_GetClipboardText();
+
+                if (clipboardText)
+                {
+                    mainMenu.appendTextInput(clipboardText);
+                    SDL_free(clipboardText);
+                }
+            }
+
+            // --------------------------------------------------------
+            // Перемещение курсора
+            // --------------------------------------------------------
+
+            if (input.textLeftPressed)
+                mainMenu.moveTextCursorLeft(input.textShiftHeld);
+
+            if (input.textRightPressed)
+                mainMenu.moveTextCursorRight(input.textShiftHeld);
+
+            if (input.textHomePressed)
+                mainMenu.moveTextCursorHome(input.textShiftHeld);
+
+            if (input.textEndPressed)
+                mainMenu.moveTextCursorEnd(input.textShiftHeld);
+
+            // --------------------------------------------------------
+            // Удаление
+            // --------------------------------------------------------
+
             if (input.textBackspacePressed)
                 mainMenu.backspaceTextInput();
 
+            if (input.textDeletePressed)
+                mainMenu.deleteTextForward();
+
+            // --------------------------------------------------------
+            // Ввод текста
+            // --------------------------------------------------------
+
             if (!input.textInput.empty())
                 mainMenu.appendTextInput(input.textInput);
+
+            // --------------------------------------------------------
+            // Завершение редактирования
+            // --------------------------------------------------------
 
             if (input.textEnterPressed || input.textEscapePressed)
                 mainMenu.finishTextInput();
@@ -575,8 +684,6 @@ static int runGame()
                 menuOpen = !menuOpen;
             }
 
-            network.update();
-            profiler.mark(FrameProfiler::Network);
 
             if (network.consumeConnectionFailed())
             {
@@ -585,6 +692,9 @@ static int runGame()
             }
 
             auto blobs = world.snapshot();
+            const uint64_t blobsVersion = world.version();
+            const std::uint64_t foodVersion = world.foodVersion();
+
             auto ownedIds = world.getOwnedIds();
 
             // --------------------------------------------------------
@@ -628,7 +738,8 @@ static int runGame()
 
                 if (input.spawnRequestPressed)
                 {
-                    network.requestSpawn();
+                    camera.spectator = false;
+                    network.requestSpawnFromSpectate();
                 }
 
                 // Split / одиночный Eject
@@ -701,7 +812,7 @@ static int runGame()
                     if (
                         nowMacro -
                         gameState.lastMacroShotTime >=
-                        std::chrono::milliseconds(150)
+                        std::chrono::milliseconds(200)
                         )
                     {
                         gameState.lastMacroShotTime =
@@ -715,6 +826,7 @@ static int runGame()
                         );
 
                         network.requestEjectMass();
+                        network.requestEjectMass();
                         virusGuard.noteOwnEject();
                     }
                 }
@@ -723,13 +835,22 @@ static int runGame()
             // --------------------------------------------------------
             // Обновление игры
             // --------------------------------------------------------
-           
+
+            const float frameDeltaTime =
+                static_cast<float>(stats.deltaTime());
+
+            const float segmentDuration = 0.12f;
+
             gameRenderer.updateRenderStates(
                 blobs,
-                renderStates
+                renderStates,
+                segmentDuration
             );
 
-            gameRenderer.updatePositions(renderStates);
+            gameRenderer.updatePositions(
+                renderStates,
+                frameDeltaTime
+            );
 
             playerTracker.update(
                 blobs,
@@ -741,7 +862,7 @@ static int runGame()
                 input,
                 ownedIds,
                 renderStates,
-                static_cast<float>(stats.deltaTime()),
+                frameDeltaTime,
                 screenW,
                 screenH,
                 menuOpen
@@ -758,6 +879,7 @@ static int runGame()
                     << "Player died. Switching to spectate.\n";
 
                 network.requestSpectate();
+                camera.spectator = true;
 
                 canRespawn = true;
                 menuOpen = false;
@@ -789,9 +911,9 @@ static int runGame()
 
                 // Keep the arrival timestamp stable while World returns the same snapshot.
                 if (!hasVirusEjectorSnapshotArrival ||
-                    blobs != previousVirusEjectorSnapshot)
+                    blobsVersion != previousVirusEjectorWorldVersion)
                 {
-                    previousVirusEjectorSnapshot = blobs;
+                    previousVirusEjectorWorldVersion = blobsVersion;
                     virusEjectorSnapshotArrival = nowSeconds;
                     hasVirusEjectorSnapshotArrival = true;
                 }
@@ -915,6 +1037,7 @@ static int runGame()
 
                 gameRenderer.draw(
                     blobs,
+                    foodVersion,
                     ownedIds,
                     renderStates,
                     screenW,
@@ -1038,6 +1161,11 @@ static int runGame()
 
                         network.setNickname(mainMenu.nickname());
                         network.setPlayerPassword(mainMenu.playerPassword());
+                        network.setPlayerColor(
+                            static_cast<uint8_t>(
+                                mainMenu.selectedColorIndex()
+                                )
+                        );
 
                         const bool respawnOnCurrentServer =
                             canRespawn &&
@@ -1098,7 +1226,8 @@ static int runGame()
                     screenW,
                     screenH,
                     input.mouseX,
-                    input.mouseY
+                    input.mouseY,
+                    false
                 );
             }
 
@@ -1112,9 +1241,9 @@ static int runGame()
             // --------------------------------------------------------
 
             glClearColor(
-                0.05f,
-                0.05f,
-                0.07f,
+                242.0f / 255.0f,
+                251.0f / 255.0f,
+                255.0f / 255.0f,
                 1.0f
             );
 
@@ -1179,7 +1308,8 @@ static int runGame()
                 screenW,
                 screenH,
                 input.mouseX,
-                input.mouseY
+                input.mouseY,
+                true
             );
 
             profiler.mark(FrameProfiler::Draw);

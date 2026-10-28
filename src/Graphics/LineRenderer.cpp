@@ -291,8 +291,8 @@ void LineRenderer::draw(
 
     glUniform2f(
         m_cameraPos,
-        m_camera.offsetX,
-        m_camera.offsetY
+        m_camera.pos.x,
+        m_camera.pos.y
     );
 
     glUniform1f(
@@ -308,8 +308,8 @@ void LineRenderer::draw(
 
     glUniform2f(
         m_viewportSize,
-        screenW,
-        screenH
+        m_camera.vw,
+        m_camera.vh
     );
 
     glUniform3f(

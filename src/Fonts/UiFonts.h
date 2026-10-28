@@ -11,9 +11,9 @@ public:
     UiFonts()
         : leaderboard(
             AssetPath::get("fonts/arial.otf"),
-            20.0f,
+            17.0f,
             1.0f,
-            1.0f
+            1.2f
         ),
         chat(
             AssetPath::get("fonts/arial.otf"),
@@ -34,8 +34,26 @@ public:
             1.0f
         ),
         playerStats(
+            AssetPath::get("fonts/movavi.otf"),
+            16.0f,
+            1.0f,
+            1.0f
+        ),
+        menu(
             AssetPath::get("fonts/arial.otf"),
-            20.0f,
+            14.0f,
+            1.0f,
+            1.0f
+        ),
+        menuModes(
+            AssetPath::get("fonts/movavi.otf"),
+            15.0f,
+            1.0f,
+            1.0f
+        ),
+        colorPickerTitle(
+            AssetPath::get("fonts/movavi.otf"),
+            40.0f,
             1.0f,
             1.0f
         )
@@ -47,6 +65,9 @@ public:
     UiFont serverInfo;
     UiFont performance;
     UiFont playerStats;
+    UiFont menu;
+    UiFont menuModes;
+    UiFont colorPickerTitle;
 
     UiTextRenderer renderer;
 };

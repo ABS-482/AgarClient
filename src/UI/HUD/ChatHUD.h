@@ -1,4 +1,3 @@
-
 #pragma once
 
 #include <cstdint>
@@ -63,9 +62,11 @@ private:
         float topMargin = 0.0f;
         float bottomMargin = 0.0f;
 
-        // Ширины текста кэшируются вместе с разметкой.
+        // Ширины для Java-style разметки без аватаров.
         float enterLastNameWidth = 0.0f;
         float displayNameWidth = 0.0f;
+        float leadingBadgesWidth = 0.0f;
+        float prefixWidth = 0.0f;
     };
 
     std::shared_ptr<const std::vector<ChatMessage>>
@@ -96,10 +97,10 @@ private:
     GLint chatSkinTexture = -1;
     GLint chatSkinBorderWidth = -1;
     GLint chatSkinBorderColor = -1;
-
+    GLint chatSkinColor = -1;
     // Текстура verified.
     GLuint verifiedTexture = 0;
-
+    GLuint chatBackgroundTexture = 0;
     // Uniform-переменные шейдера verified.
     GLint verifiedTextureCenter = -1;
     GLint verifiedTextureHalfSize = -1;

@@ -5,12 +5,14 @@
 
 #include <cstdint>
 #include <memory>
-#include <mutex>
 #include <string>
 #include <unordered_map>
 #include "Leaderboard.h"
 #include <vector>
 #include <chrono>
+
+#include <cassert>
+#include <thread>
 
 using WorldSnapshot = std::shared_ptr<const std::unordered_map<uint32_t, Blob>>;
 
@@ -35,9 +37,9 @@ public:
 
     void updateFoodBlob(
         uint32_t id,
-        int16_t x,
-        int16_t y,
-        int8_t size,
+        uint16_t x,
+        uint16_t y,
+        uint8_t size,
         uint8_t colorIndex,
         uint8_t cellType,
         std::chrono::steady_clock::time_point updateTime
@@ -47,7 +49,7 @@ public:
         uint32_t id,
         uint16_t x,
         uint16_t y,
-        int16_t size,
+        uint16_t size,
         int32_t skin,
         uint8_t colorIndex,
         uint8_t flags,
@@ -60,7 +62,7 @@ public:
         uint32_t id,
         uint16_t x,
         uint16_t y,
-        int16_t size,
+        uint16_t size,
         uint8_t flags,
         uint16_t playerID,
         const std::string& name,
@@ -87,6 +89,24 @@ public:
     // с прошлого вызова — копирования НЕ происходит, отдаётся тот же shared_ptr.
     WorldSnapshot snapshot() const;
 
+    const std::unordered_map<uint32_t, Blob>& blobs() const
+    {
+        check();
+        return m_blobs;
+    }
+
+    uint64_t version() const
+    {
+        check();
+        return m_version;
+    }
+
+    uint64_t foodVersion() const
+    {
+        check();
+        return m_foodVersion;
+    }
+
     void setMapBounds(double minX, double minY, double maxX, double maxY);
     MapBounds getMapBounds() const;
     void reset();
@@ -94,7 +114,6 @@ public:
     std::vector<uint32_t> getOwnedIds() const;
 
 private:
-    mutable std::mutex m_mutex;
     std::unordered_map<uint32_t, Blob> m_blobs;
     std::unordered_map<uint16_t, std::string> playerNames;
     std::unordered_map<uint16_t, uint32_t> playerSkins;
@@ -113,8 +132,20 @@ private:
         m_cachedChatMessages;
     MapBounds m_mapBounds;
 
-    // Версионирование для кэша снапшота.
+    // Версия состояния мира.
     uint64_t m_version = 0;
-    mutable WorldSnapshot m_cachedSnapshot;
-    mutable uint64_t m_cachedVersion = 0;
+
+    // Версия визуального состояния статической еды.
+    uint64_t m_foodVersion = 0;
+
+    #ifndef NDEBUG
+        std::thread::id m_owner = std::this_thread::get_id();
+
+        void check() const
+        {
+            assert(std::this_thread::get_id() == m_owner);
+        }
+    #else
+        void check() const noexcept {}
+    #endif
 };

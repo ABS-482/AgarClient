@@ -39,6 +39,11 @@ public:
     // Повторяет проверку UserDatabase.isNickWithPassword().
     bool requiresPassword(std::string_view nickname) const;
 
+    // Проверяет, должен ли ник быть скрыт.
+    bool isInvisibleNick(
+        std::string_view nickname
+    ) const;
+
     std::size_t personalSkinCount() const;
     std::size_t clanSkinCount() const;
 
@@ -72,6 +77,10 @@ private:
         const std::string& contents
     );
 
+    static std::vector<std::string> parseInvisibleNickList(
+        const std::string& contents
+    );
+
     std::string m_proxyMode;
 
     std::thread m_worker;
@@ -90,4 +99,7 @@ private:
     // Ники и клановые префиксы, которые в Java помечены hasPassword.
     std::unordered_set<std::string> m_passwordProtectedNicks;
     std::vector<std::string> m_passwordProtectedClanPrefixes;
+
+    // Ники, для которых Java устанавливает invisibleNick = true.
+    std::unordered_set<std::string> m_invisibleNicks;
 };

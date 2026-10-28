@@ -10,7 +10,8 @@
 
 #include "../Network/NetworkClient.h"
 
-void PacketHandler::handleMessage(const uint8_t* data, size_t size)
+void PacketHandler::handleMessage(const uint8_t* data, size_t size,
+    std::chrono::steady_clock::time_point recvTime)
 {
     if (size == 0)
         return;
@@ -47,7 +48,7 @@ void PacketHandler::handleMessage(const uint8_t* data, size_t size)
             break;
 
         case 11:
-            handleWorldUpdate(reader);
+            handleWorldUpdate(reader, recvTime);
             break;
 
         case 49:
@@ -80,7 +81,7 @@ void PacketHandler::handleMessage(const uint8_t* data, size_t size)
             const uint32_t hash = reader.readUint32LE();
 
             if (m_networkClient)
-                m_networkClient->handlePingResponse(hash);
+                m_networkClient->handlePingResponse(hash, recvTime);
 
             break;
         }
@@ -475,11 +476,42 @@ void PacketHandler::handleUsersList(PacketReader& reader)
     m_world.setLeaderboard(std::move(users));
 }
 
-void PacketHandler::handleWorldUpdate(PacketReader& reader)
+void PacketHandler::handleWorldUpdate(PacketReader& reader,
+    std::chrono::steady_clock::time_point recvTime)
 {
+    // ------------------------------------------------------------
+    // Измерение интервала между World Update пакетами
+    // ------------------------------------------------------------
 
-    const auto packetTimestamp =
-        std::chrono::steady_clock::now();
+    if (m_lastWorld != std::chrono::steady_clock::time_point{})
+    {
+        const float ms =
+            std::chrono::duration<float, std::milli>(
+                recvTime - m_lastWorld
+            ).count();
+
+        // Отбрасываем слишком короткие и слишком длинные интервалы.
+        if (ms > 5.0f && ms < 500.0f)
+        {
+            const float tick = m_tickMs.load();
+
+            // Экспоненциальное усреднение интервала.
+            m_tickMs.store(
+                tick + (ms - tick) * 0.1f
+            );
+
+            const float jitter = m_jitterMs.load();
+
+            // Усреднённое абсолютное отклонение интервала.
+            m_jitterMs.store(
+                jitter + (std::abs(ms - tick) - jitter) * 0.1f
+            );
+        }
+    }
+
+    m_lastWorld = recvTime;
+
+    const auto packetTimestamp = recvTime;
 
     // ------------------------------------------------------------
     // Поглощения (eaten)
@@ -513,9 +545,9 @@ void PacketHandler::handleWorldUpdate(PacketReader& reader)
             break;
 
         uint8_t cellType = reader.readUint8();
-        int16_t x = reader.readInt16LE();
-        int16_t y = reader.readInt16LE();
-        int8_t size = reader.readInt8();
+        uint16_t x = reader.readUint16LE();
+        uint16_t y = reader.readUint16LE();
+        uint8_t size = reader.readUint8();
         uint8_t colorIndex = reader.readUint8();
 
         m_world.updateFoodBlob(
@@ -544,7 +576,7 @@ void PacketHandler::handleWorldUpdate(PacketReader& reader)
 
         uint16_t x = reader.readUint16LE();
         uint16_t y = reader.readUint16LE();
-        int16_t size = reader.readInt16LE();
+        uint16_t size = reader.readUint16LE();
         int32_t skin = reader.readInt32LE();
         uint8_t colorIndex = reader.readUint8();
         uint8_t flags = reader.readUint8();
@@ -622,7 +654,7 @@ void PacketHandler::handleWorldUpdate(PacketReader& reader)
 
         uint16_t x = reader.readUint16LE();
         uint16_t y = reader.readUint16LE();
-        int16_t size = reader.readInt16LE();
+        uint16_t size = reader.readUint16LE();
         uint8_t flags = reader.readUint8();
 
         uint16_t playerID = reader.readUint16LE();

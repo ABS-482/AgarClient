@@ -140,6 +140,9 @@ ChatHUD::ChatHUD(
     chatSkinBorderColor =
         chatSkinShader.uniformLocation("uBorderColor");
 
+    chatSkinColor =
+        chatSkinShader.uniformLocation("uSkinColor");
+
     verifiedTextureCenter =
         verifiedTextureShader.uniformLocation("uCenter");
 
@@ -249,6 +252,38 @@ void ChatHUD::draw(
 
     constexpr float bubbleWidth = 210.0f;
     constexpr float bubbleRadius = 10.0f;
+
+    // ------------------------------------------------------------
+    // Светлая тема чата
+    // ------------------------------------------------------------
+
+// Общая панель.
+    constexpr float panelColorR = 0.96f;
+    constexpr float panelColorG = 0.97f;
+    constexpr float panelColorB = 0.985f;
+    constexpr float panelColorA = 0.48f;
+
+    // Граница общей панели.
+    constexpr float panelBorderR = 0.28f;
+    constexpr float panelBorderG = 0.33f;
+    constexpr float panelBorderB = 0.41f;
+    constexpr float panelBorderA = 0.18f;
+
+    // Фон пузырей сообщений.
+    constexpr float bubbleColorR = 0.88f;
+    constexpr float bubbleColorG = 0.91f;
+    constexpr float bubbleColorB = 0.95f;
+    constexpr float bubbleColorA = 0.42f;
+
+    // Основной текст.
+    constexpr float chatTextR = 0.12f;
+    constexpr float chatTextG = 0.15f;
+    constexpr float chatTextB = 0.20f;
+
+    // Обводка аватаров.
+    constexpr float avatarOutlineR = 0.28f;
+    constexpr float avatarOutlineG = 0.33f;
+    constexpr float avatarOutlineB = 0.41f;
 
     constexpr float bubblePaddingTop = 5.0f;
     constexpr float bubblePaddingBottom = 8.0f;
@@ -752,8 +787,7 @@ void ChatHUD::draw(
     const float panelCenterX =
         panelWidth * 0.5f + 10.0f;
 
-    const float hudReservedHeight =
-        ownedIds.empty() ? 16.0f : 52.0f;
+    const float hudReservedHeight = 20.0f;
 
     const float panelCenterY =
         screenH -
@@ -767,11 +801,17 @@ void ChatHUD::draw(
         panelHeight,
         25.0f,
 
-        // rgba(0, 0, 0, 0.3)
-        0.0f, 0.0f, 0.0f, 0.30f,
+        // Светлый фон панели.
+        panelColorR,
+        panelColorG,
+        panelColorB,
+        panelColorA,
 
-        // Белая граница с прозрачностью 15%.
-        1.0f, 1.0f, 1.0f, 0.15f,
+        // Нейтральная серая граница.
+        panelBorderR,
+        panelBorderG,
+        panelBorderB,
+        panelBorderA,
 
         1.0f,
 
@@ -1053,15 +1093,22 @@ void ChatHUD::draw(
 
                 chatSkinShader.setVec3(
                     chatSkinBorderColor,
-                    1.0f,
-                    1.0f,
-                    1.0f
+                    avatarOutlineR,
+                    avatarOutlineG,
+                    avatarOutlineB
                 );
 
                 glActiveTexture(GL_TEXTURE0);
                 glBindTexture(GL_TEXTURE_2D, avatarTexture);
 
                 chatSkinShader.setInt(chatSkinTexture, 0);
+
+                chatSkinShader.setVec3(
+                    chatSkinColor,
+                    nicknameR,
+                    nicknameG,
+                    nicknameB
+                );
 
                 skinMesh.draw();
             }
@@ -1080,9 +1127,9 @@ void ChatHUD::draw(
                     nicknameB,
                     1.0f,
 
-                    1.0f,
-                    1.0f,
-                    1.0f,
+                    avatarOutlineR,
+                    avatarOutlineG,
+                    avatarOutlineB,
                     1.0f,
 
                     enterAvatarBorderWidth,
@@ -1171,9 +1218,9 @@ void ChatHUD::draw(
                 enterText,
                 enterSuffixX,
                 enterSuffixY,
-                1.0f,
-                1.0f,
-                1.0f,
+                chatTextR,
+                chatTextG,
+                chatTextB,
                 1.0f
             );
         }
@@ -1200,10 +1247,10 @@ void ChatHUD::draw(
                     bubbleLeftX + 0.25f, boxTop + 25.0f,
 
                     // Цвет пузыря #80808057
-                    128.0f / 255.0f,
-                    128.0f / 255.0f,
-                    128.0f / 255.0f,
-                    87.0f / 255.0f,
+                    bubbleColorR,
+                    bubbleColorG,
+                    bubbleColorB,
+                    bubbleColorA,
 
                     screenW,
                     screenH
@@ -1225,11 +1272,10 @@ void ChatHUD::draw(
                 bubbleRadius,
                 bubbleRadius,
 
-                // Фон #80808057
-                128.0f / 255.0f,
-                128.0f / 255.0f,
-                128.0f / 255.0f,
-                87.0f / 255.0f,
+                bubbleColorR,
+                bubbleColorG,
+                bubbleColorB,
+                bubbleColorA,
 
                 // Без границы
                 1.0f,
@@ -1303,6 +1349,13 @@ void ChatHUD::draw(
                     chatSkinShader.setInt(
                         chatSkinTexture,
                         0
+                    );
+
+                    chatSkinShader.setVec3(
+                        chatSkinColor,
+                        nicknameR,
+                        nicknameG,
+                        nicknameB
                     );
 
                     skinMesh.draw();
@@ -1410,9 +1463,9 @@ void ChatHUD::draw(
                     visual.lines[lineIndex],
                     textX,
                     lineY,
-                    1.0f,
-                    1.0f,
-                    1.0f,
+                    chatTextR,
+                    chatTextG,
+                    chatTextB,
                     1.0f
                 );
             }

@@ -1,6 +1,7 @@
 #include "PlayerTracker.h"
 
 #include <algorithm>
+#include <cmath>
 
 PlayerTracker::PlayerTracker(GameState& gameState)
     : gameState(gameState)
@@ -13,10 +14,10 @@ void PlayerTracker::update(
     const std::unordered_map<uint32_t, RenderState>& renderStates
 )
 {
+    gameState.currentScore = 0.0f;
+
     if (ownedIds.empty())
         return;
-
-    gameState.currentScore = 0.0f;
 
     for (const uint32_t id : ownedIds)
     {
@@ -24,17 +25,17 @@ void PlayerTracker::update(
         if (it == blobs->end())
             continue;
 
-        float size;
+        // Java использует targetRadius, а не интерполированный
+        // радиус отрисовки.
+        const float size = it->second.targetSize;
 
-        const auto rsIt = renderStates.find(id);
-        if (rsIt != renderStates.end())
-            size = rsIt->second.size;
-        else
-            size = it->second.targetSize;
-
-        gameState.currentScore += (size * size) / 100.0f;
+        gameState.currentScore +=
+            std::ceil((size * size) / 100.0f);
     }
 
     gameState.bestScoreSoFar =
-        std::max(gameState.bestScoreSoFar, gameState.currentScore);
+        std::max(
+            gameState.bestScoreSoFar,
+            gameState.currentScore
+        );
 }

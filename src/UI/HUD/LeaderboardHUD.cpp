@@ -6,6 +6,7 @@
 #include <vector>
 #include <utility>
 #include <unordered_set>
+#include <cctype>
 
 #include "../../Graphics/UIPanel.h"
 #include "../../Fonts/UiTextRenderer.h"
@@ -355,7 +356,8 @@ void LeaderboardHUD::draw(
     const float rowX =
         panelLeft + paddingX;
 
-    const float nameFontScale = 17.0f / 20.0f;
+    const float nameFontScale = 1.0f;
+
 
     // --------------------------------------------------------
     // Бейдж уровня — аналог Java TextButton из setLevel()/
@@ -365,7 +367,7 @@ void LeaderboardHUD::draw(
     // --------------------------------------------------------
 
     constexpr float badgeHeight = 13.0f;
-    constexpr float badgeFontScale = 12.0f / 20.0f;
+    constexpr float badgeFontScale = 12.0f / 17.0f;
     constexpr float badgePaddingX = 3.0f;
     constexpr float badgeMinWidth = 14.0f;
     constexpr float badgeGap = 1.0f;
@@ -447,6 +449,101 @@ void LeaderboardHUD::draw(
             return cursorX + badgeWidth + badgeGap;
         };
 
+    // Ширина бейджа рассчитывается так же, как в drawLevelBadge.
+    auto levelBadgeWidth =
+        [&](uint16_t level) -> float
+        {
+            if (level == 0)
+                return 0.0f;
+
+            const BadgeText& badge = badgeText(level);
+
+            const float textWidth =
+                badge.width * badgeFontScale;
+
+            return std::max(
+                textWidth + badgePaddingX * 2.0f,
+                badgeMinWidth
+            );
+        };
+
+    // Сравнение ASCII-имён без учёта регистра.
+    auto equalsIgnoreCase =
+        [](const std::string& value, const char* expected) -> bool
+        {
+            const std::string target(expected);
+
+            if (value.size() != target.size())
+                return false;
+
+            for (std::size_t i = 0; i < value.size(); ++i)
+            {
+                if (std::tolower(
+                    static_cast<unsigned char>(value[i])) !=
+                    std::tolower(
+                        static_cast<unsigned char>(target[i])))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        };
+
+    // Обрезка длинного ника по доступной ширине.
+    // Многобайтные UTF-8 символы не разрезаются посередине.
+    auto truncateToWidth =
+        [&](const std::string& source, float maxWidth) -> std::string
+        {
+            if (font.measureWidth(source) *
+                nameFontScale <= maxWidth)
+            {
+                return source;
+            }
+
+            const std::string ellipsis = "...";
+
+            if (font.measureWidth(ellipsis) *
+                nameFontScale > maxWidth)
+            {
+                return {};
+            }
+
+            std::string result;
+
+            for (std::size_t pos = 0; pos < source.size();)
+            {
+                const unsigned char c =
+                    static_cast<unsigned char>(source[pos]);
+
+                std::size_t charLength = 1;
+
+                if ((c & 0xE0) == 0xC0)
+                    charLength = 2;
+                else if ((c & 0xF0) == 0xE0)
+                    charLength = 3;
+                else if ((c & 0xF8) == 0xF0)
+                    charLength = 4;
+
+                if (pos + charLength > source.size())
+                    charLength = 1;
+
+                const std::string candidate =
+                    result + source.substr(pos, charLength) + ellipsis;
+
+                if (font.measureWidth(candidate) *
+                    nameFontScale > maxWidth)
+                {
+                    break;
+                }
+
+                result.append(source, pos, charLength);
+                pos += charLength;
+            }
+
+            return result + ellipsis;
+        };
+
     for (int i = 0; i < visibleCount; ++i)
     {
         const auto& entry =
@@ -472,6 +569,150 @@ void LeaderboardHUD::draw(
             topY +
             rowHeight * i +
             rowHeight * 0.5f;
+
+        // --------------------------------------------------------
+// Альтернативная таблица — логика Java Leaderboard$Node.draw()
+// --------------------------------------------------------
+
+        if (alternativeLeaderboard)
+        {
+            std::string displayName;
+            const std::string* nameToDraw = &entry.name;
+
+            float textR = 1.0f;
+            float textG = 1.0f;
+            float textB = isMe ? 0.0f : 1.0f;
+
+            // Java: специальные заголовки команд отображаются красным.
+            const bool isTeamHeader =
+                equalsIgnoreCase(entry.name, "*** Team 1 ***") ||
+                equalsIgnoreCase(entry.name, "*** Team 2 ***");
+
+            if (isTeamHeader)
+            {
+                textR = 1.0f;
+                textG = 0.0f;
+                textB = 0.0f;
+            }
+
+            // Java: суффикс (*) меняет цвет на оранжевый и скрывается.
+            if (entry.name.size() > 3 &&
+                entry.name.compare(entry.name.size() - 3, 3, "(*)") == 0)
+            {
+                displayName = entry.name;
+
+                // Повторяет Java: убирает "(*)" и пробел перед ним.
+                displayName.erase(displayName.size() - 4);
+
+                nameToDraw = &displayName;
+
+                textR = 1.0f;
+                textG = 0.5f;
+                textB = 0.0f;
+            }
+
+            // Резервируем место для бейджей слева от центрированного ника.
+            float badgeReserve = 0.0f;
+
+            if (entry.userLevel > 0)
+            {
+                badgeReserve =
+                    levelBadgeWidth(entry.userLevel) + 3.0f;
+
+                if (entry.hasSeason && entry.userLevelSeason > 0)
+                {
+                    badgeReserve +=
+                        levelBadgeWidth(entry.userLevelSeason);
+                }
+            }
+
+            // Оставляем место для бейджей с обеих сторон от центрированной строки.
+            const float maxNameWidth = std::max(
+                0.0f,
+                panelWidth - 2.0f * badgeReserve
+            );
+
+            if (font.measureWidth(*nameToDraw) *
+                nameFontScale > maxNameWidth)
+            {
+                displayName = truncateToWidth(*nameToDraw, maxNameWidth);
+                nameToDraw = &displayName;
+            }
+
+            const std::string& visibleName = *nameToDraw;
+
+            const float textWidth =
+                font.measureWidth(visibleName) *
+                nameFontScale;
+
+            // Java: ник центрируется по ширине строки.
+            const float textLeft =
+                panelLeft + (panelWidth - textWidth) * 0.5f;
+
+            const float textTop =
+                rowY -
+                font.lineHeight() *
+                nameFontScale * 0.5f;
+
+            textRenderer.add(
+                font,
+                visibleName,
+                textLeft,
+                textTop,
+                textR,
+                textG,
+                textB,
+                1.0f,
+                nameFontScale
+            );
+
+            // Java располагает бейджи относительно левого края ника,
+            // а не относительно левого края панели.
+            // Бейдж уровня находится ближе к нику, сезонный — левее.
+            if (entry.userLevel > 0)
+            {
+                const bool hasSeasonBadge =
+                    entry.hasSeason && entry.userLevelSeason > 0;
+
+                const float mainBadgeWidth =
+                    levelBadgeWidth(entry.userLevel);
+
+                const float seasonBadgeWidth =
+                    hasSeasonBadge
+                    ? levelBadgeWidth(entry.userLevelSeason)
+                    : 0.0f;
+
+                float badgeCursorX =
+                    textLeft -
+                    mainBadgeWidth -
+                    3.0f -
+                    seasonBadgeWidth;
+
+                badgeCursorX = drawLevelBadge(
+                    entry.userLevel,
+                    badgeCursorX,
+                    rowY,
+                    0.855f,
+                    0.647f,
+                    0.125f
+                );
+
+                if (hasSeasonBadge)
+                {
+                    drawLevelBadge(
+                        entry.userLevelSeason,
+                        badgeCursorX,
+                        rowY,
+                        0.0f,
+                        0.5f,
+                        0.0f
+                    );
+                }
+            }
+
+            // Не выполнять обычную отрисовку этой же строки.
+            continue;
+        }
 
         float badgeCursorX = panelLeft;
         float cursorX = rowX;

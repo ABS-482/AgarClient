@@ -6,15 +6,17 @@ namespace CircleInstancedShader
 
         layout (location = 0) in vec2 aPos;
 
-        // Данные отдельного экземпляра:
+        // Данные отдельного экземпляра.
         layout (location = 1) in vec2 aCenter;
         layout (location = 2) in float aRadius;
         layout (location = 3) in vec3 aColor;
         layout (location = 4) in float aDepth;
 
-        uniform vec2 uCameraPos;   // offsetX / offsetY
-        uniform float uZoom;       // camera.ratio
-        uniform vec2 uScreenSize;  // размеры окна
+        // Новая Camera.
+        uniform vec2 uCameraPos;
+        uniform float uZoom;
+        uniform vec2 uScreenSize;
+        uniform vec2 uViewportSize;
 
         out vec2 vLocalPos;
         out vec3 vColor;
@@ -24,6 +26,7 @@ namespace CircleInstancedShader
             vLocalPos = aPos;
             vColor = aColor;
 
+            // Локальные координаты клетки -> мировые координаты.
             vec2 worldPos =
                 aCenter +
                 aPos * aRadius;
@@ -32,10 +35,15 @@ namespace CircleInstancedShader
                 worldPos -
                 uCameraPos;
 
+            // Масштаб с учётом viewport и зума камеры.
+            vec2 scale =
+                (uScreenSize / uViewportSize) / uZoom;
+
             vec2 screenPos =
                 uScreenSize * 0.5 +
-                rel * uZoom;
+                rel * scale;
 
+            // Экранные координаты -> OpenGL NDC.
             vec2 ndc = vec2(
                 (screenPos.x / uScreenSize.x) * 2.0 - 1.0,
                 1.0 - (screenPos.y / uScreenSize.y) * 2.0

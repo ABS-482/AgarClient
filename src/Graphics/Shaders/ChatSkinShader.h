@@ -35,6 +35,7 @@ uniform sampler2D uSkin;
 uniform float uRadius;
 uniform float uBorderWidth;
 uniform vec3 uBorderColor;
+uniform vec3 uSkinColor;
 
 out vec4 FragColor;
 
@@ -62,12 +63,21 @@ void main()
 
     vec4 skin = texture(uSkin, vUV);
 
+    // Прозрачные участки скина показывают цвет тела игрока.
+    vec3 skinColor = mix(
+        uSkinColor,
+        skin.rgb,
+        skin.a
+    );
+
+    // Белая рамка вокруг круглого аватара.
     vec3 color = mix(
         uBorderColor,
-        skin.rgb,
+        skinColor,
         borderMask
     );
 
+    // Сглаживание внешнего края круга.
     float alpha = 1.0 - smoothstep(
         1.0 - edge,
         1.0 + edge,
@@ -75,6 +85,6 @@ void main()
     );
 
     FragColor = vec4(color, alpha);
-}
+    }
 )";
 }

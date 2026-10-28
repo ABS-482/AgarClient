@@ -12,6 +12,8 @@
 #include <random>
 #include <string>
 #include <vector>
+#include <ctime>
+#include <string_view>
 
 #pragma comment(lib, "winhttp.lib")
 
@@ -29,10 +31,35 @@ namespace
     constexpr char kClanIdsPath[] =
         "/engine/formobile/clansidsmobile.txt";
 
+    constexpr char kInvisibleNicksPath[] =
+        "/engine/formobile/invisiblenicks.js";
+
     constexpr std::size_t kMaxResponseSize =
         64u * 1024u * 1024u;
 
     constexpr int kHostAttempts = 3;
+
+    std::string currentHourStamp()
+    {
+        const std::time_t now = std::time(nullptr);
+        std::tm localTime{};
+
+        if (localtime_s(&localTime, &now) != 0)
+            return {};
+
+        char buffer[11]{};
+
+        if (std::strftime(
+            buffer,
+            sizeof(buffer),
+            "%Y%m%d%H",
+            &localTime) == 0)
+        {
+            return {};
+        }
+
+        return buffer;
+    }
 
     std::string trimAscii(std::string value)
     {
@@ -679,6 +706,7 @@ void UserSkinDatabase::loadWorker()
     std::string clanContents;
     std::string protectedNickContents;
     std::string protectedClanContents;
+    std::string invisibleNickContents;
 
     const bool personalDownloaded = downloadTable(
         kPersonalSkinsPath,
@@ -737,6 +765,26 @@ void UserSkinDatabase::loadWorker()
         : std::vector<std::pair<std::string, uint32_t>>{};
 
     // ------------------------------------------------------------
+    // Список ников с invisibleNick = true
+    // ------------------------------------------------------------
+
+    const std::string invisibleNicksPath =
+        std::string(kInvisibleNicksPath) +
+        "?time=" +
+        currentHourStamp();
+
+    const bool invisibleNicksDownloaded = downloadTable(
+        invisibleNicksPath,
+        invisibleNickContents
+    );
+
+    if (m_stopping.load(std::memory_order_acquire))
+    {
+        m_loaded.store(true, std::memory_order_release);
+        return;
+    }
+
+    // ------------------------------------------------------------
     // Разбор таблиц защищённых ников и кланов
     // ------------------------------------------------------------
 
@@ -763,6 +811,21 @@ void UserSkinDatabase::loadWorker()
         prefix = normalizeNick(prefix);
     }
 
+    auto invisibleNickList = invisibleNicksDownloaded
+        ? parseInvisibleNickList(invisibleNickContents)
+        : std::vector<std::string>{};
+
+    std::unordered_set<std::string> invisibleNicks;
+    invisibleNicks.reserve(invisibleNickList.size());
+
+    for (auto& nickname : invisibleNickList)
+    {
+        invisibleNicks.insert(std::move(nickname));
+    }
+
+    const std::size_t invisibleNickCount =
+        invisibleNicks.size();
+
     // ------------------------------------------------------------
     // Публикация загруженных данных
     // ------------------------------------------------------------
@@ -775,6 +838,7 @@ void UserSkinDatabase::loadWorker()
 
         m_passwordProtectedNicks.swap(protectedNicks);
         m_passwordProtectedClanPrefixes.swap(protectedClanList);
+        m_invisibleNicks.swap(invisibleNicks);
     }
 
     std::clog
@@ -782,6 +846,8 @@ void UserSkinDatabase::loadWorker()
         << m_personalSkins.size()
         << ", clan skins: "
         << m_clanSkins.size()
+        << ", invisible nicks: "
+        << invisibleNickCount
         << '\n';
 
     m_loaded.store(true, std::memory_order_release);
@@ -886,4 +952,87 @@ bool UserSkinDatabase::requiresPassword(
     }
 
     return false;
+}
+
+bool UserSkinDatabase::isInvisibleNick(
+    std::string_view nickname
+) const
+{
+    const std::string normalized = normalizeNick(nickname);
+
+    if (normalized.empty())
+        return false;
+
+    std::shared_lock lock(m_mutex);
+
+    return m_invisibleNicks.find(normalized) !=
+        m_invisibleNicks.end();
+}
+
+std::vector<std::string>
+UserSkinDatabase::parseInvisibleNickList(
+    const std::string& contents
+)
+{
+    std::vector<std::string> result;
+
+    // Java использует Pattern.compile("'.*?'").
+    // Поэтому извлекаем непустые строки в одинарных
+    // кавычках, не переходя через границы строк.
+    std::size_t lineStart = 0;
+
+    while (lineStart < contents.size())
+    {
+        const std::size_t lineEnd =
+            contents.find('\n', lineStart);
+
+        const std::size_t actualEnd =
+            lineEnd == std::string::npos
+            ? contents.size()
+            : lineEnd;
+
+        const std::string_view line(
+            contents.data() + lineStart,
+            actualEnd - lineStart
+        );
+
+        std::size_t pos = 0;
+
+        while (pos < line.size())
+        {
+            const std::size_t quoteStart =
+                line.find('\'', pos);
+
+            if (quoteStart == std::string_view::npos)
+                break;
+
+            const std::size_t quoteEnd =
+                line.find('\'', quoteStart + 1);
+
+            if (quoteEnd == std::string_view::npos)
+                break;
+
+            if (quoteEnd > quoteStart + 1)
+            {
+                std::string nickname = normalizeNick(
+                    line.substr(
+                        quoteStart + 1,
+                        quoteEnd - quoteStart - 1
+                    )
+                );
+
+                if (!nickname.empty())
+                    result.push_back(std::move(nickname));
+            }
+
+            pos = quoteEnd + 1;
+        }
+
+        if (lineEnd == std::string::npos)
+            break;
+
+        lineStart = lineEnd + 1;
+    }
+
+    return result;
 }

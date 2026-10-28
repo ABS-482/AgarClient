@@ -69,7 +69,7 @@ private:
 
     std::unordered_map<uint16_t, BadgeText> badgeCache;
 
-    static constexpr int kMaxRows = 10;
+    static constexpr int kMaxRows = 20;
     std::array<std::string, kMaxRows> rankedText;
 
     std::shared_ptr<const std::vector<LeaderboardEntry>>

@@ -32,15 +32,16 @@ namespace IconShader
 
     inline constexpr const char* fragment = R"(#version 330 core
 
-        in vec2 vUV;
+    in vec2 vUV;
 
-        uniform sampler2D uIcon;
+    uniform sampler2D uIcon;
+    uniform vec4 uTint;
 
-        out vec4 FragColor;
+    out vec4 FragColor;
 
-        void main()
-        {
-            FragColor = texture(uIcon, vUV);
-        }
+    void main()
+    {
+        FragColor = texture(uIcon, vUV) * uTint;
+    }
     )";
 }

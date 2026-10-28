@@ -9,6 +9,7 @@
 IconRenderer::IconRenderer()
     : m_shader(IconShader::vertex, IconShader::fragment)
 {
+    m_uTint = m_shader.uniformLocation("uTint");
     m_uCenter = m_shader.uniformLocation("uCenter");
     m_uHalfSize = m_shader.uniformLocation("uHalfSize");
     m_uScreenSize = m_shader.uniformLocation("uScreenSize");
@@ -45,17 +46,37 @@ IconRenderer::~IconRenderer()
     glDeleteVertexArrays(1, &m_vao);
 }
 
-GLuint IconRenderer::loadTexture(const std::string& path)
+GLuint IconRenderer::loadTexture(
+    const std::string& path,
+    int* widthOut,
+    int* heightOut
+)
 {
-    int width = 0, height = 0, channels = 0;
+    int width = 0;
+    int height = 0;
+    int channels = 0;
 
-    unsigned char* pixels = stbi_load(path.c_str(), &width, &height, &channels, 4);
+    unsigned char* pixels = stbi_load(
+        path.c_str(),
+        &width,
+        &height,
+        &channels,
+        4
+    );
 
     if (!pixels)
     {
-        std::cerr << "IconRenderer: failed to load " << path << '\n';
+        std::cerr
+            << "IconRenderer: failed to load "
+            << path << '\n';
         return 0;
     }
+
+    if (widthOut)
+        *widthOut = width;
+
+    if (heightOut)
+        *heightOut = height;
 
     GLuint texture = 0;
     glGenTextures(1, &texture);
@@ -88,7 +109,11 @@ void IconRenderer::draw(
     GLuint texture,
     float centerX, float centerY,
     float width, float height,
-    float screenWidth, float screenHeight
+    float screenWidth, float screenHeight,
+    float tintR,
+    float tintG,
+    float tintB,
+    float tintA
 )
 {
     if (texture == 0)
@@ -99,6 +124,13 @@ void IconRenderer::draw(
     m_shader.setVec2(m_uCenter, centerX, centerY);
     m_shader.setVec2(m_uHalfSize, width * 0.5f, height * 0.5f);
     m_shader.setVec2(m_uScreenSize, screenWidth, screenHeight);
+    m_shader.setVec4(
+        m_uTint,
+        tintR,
+        tintG,
+        tintB,
+        tintA
+    );
 
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, texture);

@@ -4,6 +4,8 @@
 
 #include <ixwebsocket/IXWebSocket.h>
 
+#include "NetEventQueue.h"
+#include <vector>
 #include <string>
 #include <mutex>
 #include <atomic>
@@ -150,17 +152,33 @@ public:
     }
 
     // Вызывается PacketHandler при получении ответа opcode 115.
-    void handlePingResponse(uint32_t hash) noexcept;
+    void handlePingResponse(
+        uint32_t hash,
+        std::chrono::steady_clock::time_point recvTime
+    ) noexcept;
+    void sendPlayerColor();
 
 private:
     void sendNick();
     void sendDonate();
-    void sendPlayerColor();
     void sendRaw(const uint8_t* data, size_t size);
     void sendHandshake();
     void sendPacket(uint8_t opcode);
     void sendPlayerPassword();
     void sendPing();
+
+    void processEvents();
+
+    void onOpen(
+        std::chrono::steady_clock::time_point recvTime
+    );
+
+    void onClose();
+
+    void onError(const std::string& reason);
+
+    NetEventQueue m_events;
+    std::vector<NetEvent> m_batch;
 
     std::chrono::steady_clock::time_point m_lastChatTime{};
 
@@ -172,13 +190,19 @@ private:
         m_nickResendTime{};
 
     std::string m_nickname;
+    std::string m_playerPassword;
+
+    // Последние отправленные значения.
+    std::string m_lastSentNickname;
+    std::string m_lastSentPlayerPassword;
+
+    bool m_hasSentNickname = false;
+    bool m_hasSentPlayerPassword = false;
 
     uint32_t m_donateId = 0;
     std::string m_donatePass;
 
     uint8_t m_playerColor = 0;
-
-    std::string m_playerPassword;
 
     ConnectionMode m_connectionMode =
         ConnectionMode::Play;

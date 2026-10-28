@@ -19,7 +19,8 @@ public:
     }
 
     // Аналог вашего parse(reader) из JS.
-    void handleMessage(const uint8_t* data, size_t size);
+    void handleMessage(const uint8_t* data, size_t size,
+        std::chrono::steady_clock::time_point recvTime);
     void setNetworkClient(NetworkClient& client)
     {
         m_networkClient = &client;
@@ -36,7 +37,8 @@ public:
     }
 
 private:
-    void handleWorldUpdate(PacketReader& reader);
+    void handleWorldUpdate(PacketReader& reader,
+        std::chrono::steady_clock::time_point recvTime);
     void handleColorsViaPid(PacketReader& reader);
     void handleSkinsViaPid(PacketReader& reader);
     void handleRemovePidName(PacketReader& reader);

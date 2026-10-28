@@ -37,7 +37,8 @@ GameHUD::GameHUD(
     playerHUD(
         uiPanel,
         gameState,
-        uiFonts
+        uiFonts,
+        camera
     ),
     chatHUD(
         uiPanel,
@@ -131,7 +132,8 @@ void GameHUD::draw(
             fps,
             pingMs,
             serverSessionSeconds,
-            serverInfoText
+            serverInfoText,
+            gameMode
         );
     }
 

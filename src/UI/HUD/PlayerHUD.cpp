@@ -7,17 +7,20 @@
 #include <iomanip>
 
 #include "../../Graphics/UIPanel.h"
+#include "../../Graphics/Camera.h"
 #include "../../Game/GameState.h"
 #include "../../Fonts/UiFonts.h"
 
 PlayerHUD::PlayerHUD(
     UIPanel& uiPanel,
     GameState& gameState,
-    UiFonts& uiFonts
+    UiFonts& uiFonts,
+    Camera& camera
 )
     : uiPanel(uiPanel),
     gameState(gameState),
-    uiFonts(uiFonts)
+    uiFonts(uiFonts),
+    camera(camera)
 {
 }
 
@@ -29,108 +32,106 @@ void PlayerHUD::draw(
     double fps,
     int pingMs,
     std::int64_t serverSessionSeconds,
-    const std::string& serverInfoText
+    const std::string& serverInfoText,
+    uint8_t gameMode
 )
 {
-    // --------------------------------------------------------
-    // Player statistics
-    // --------------------------------------------------------
 
+
+    // --------------------------------------------------------
+// Player statistics — Java-style HUD
+// --------------------------------------------------------
+
+    constexpr float fontScale = 1.0f;
+
+    // Цвет FPS, Ping и serverInfo.
+    constexpr float r = 62.0f / 255.0f;
+    constexpr float g = 117.0f / 255.0f;
+    constexpr float b = 178.0f / 255.0f;
+    constexpr float a = 1.0f;
+
+    // Нижняя часть экрана.
+    const float y = screenH - 16.0f;
+
+    // Горизонтальное расположение.
+    constexpr float xOffset = 13.0f;
+
+    // По умолчанию показываем текущую позицию камеры.
+    // Это используется в режиме наблюдателя.
+    int displayedX = static_cast<int>(camera.pos.x);
+    int displayedY = static_cast<int>(camera.pos.y);
+
+    // Если есть свои клетки, используем координаты
+    // первой клетки с учётом интерполяции.
     if (!ownedIds.empty())
     {
         const auto firstRsIt =
             renderStates.find(ownedIds[0]);
 
-        const float firstX =
-            firstRsIt != renderStates.end()
-            ? firstRsIt->second.x
-            : 0.0f;
+        if (firstRsIt != renderStates.end())
+        {
+            displayedX =
+                static_cast<int>(firstRsIt->second.x);
 
-        const float firstY =
-            firstRsIt != renderStates.end()
-            ? firstRsIt->second.y
-            : 0.0f;
+            displayedY =
+                static_cast<int>(firstRsIt->second.y);
+        }
+    }
 
-        std::ostringstream hudStream;
+    // Координаты отображаются всегда.
+    uiFonts.renderer.add(
+        uiFonts.playerStats,
+        "x:" + std::to_string(displayedX),
+        xOffset, y,
+        r, g, b, a,
+        fontScale
+    );
 
-        hudStream
-            << "x:"
-            << static_cast<int>(firstX)
-            << " y:"
-            << static_cast<int>(firstY)
-            << ". Your best: "
-            << static_cast<int>(gameState.bestScoreSoFar)
-            << ". Now: "
+    uiFonts.renderer.add(
+        uiFonts.playerStats,
+        "y:" + std::to_string(displayedY),
+        xOffset + 66.0f, y,
+        r, g, b, a,
+        fontScale
+    );
+
+    // Масса и рекорд — только при наличии своих клеток.
+    if (!ownedIds.empty())
+    {
+        std::ostringstream massStream;
+
+        massStream
+            << "mass:"
             << static_cast<int>(gameState.currentScore)
-            << " ("
-            << ownedIds.size()
-            << ")";
-
-        const std::string hudText = hudStream.str();
-
-        constexpr float hudFontScale = 1.0f;
-        constexpr float paddingX = 14.0f;
-        constexpr float panelHeight = 40.0f;
-
-        const float textWidthPx =
-            uiFonts.playerStats.measureWidth(hudText) *
-            hudFontScale;
-
-        const float panelWidth =
-            textWidthPx + paddingX * 2.0f;
-
-        constexpr float marginLeft = 10.0f;
-        constexpr float marginBottom = 10.0f;
-
-        const float panelCenterX =
-            marginLeft + panelWidth * 0.5f;
-
-        const float panelCenterY =
-            screenH -
-            marginBottom -
-            panelHeight * 0.5f;
-
-        uiPanel.draw(
-            panelCenterX,
-            panelCenterY,
-            panelWidth,
-            panelHeight,
-            10.0f,
-
-            // Background
-            0.0f, 0.0f, 0.0f, 0.30f,
-
-            // Border
-            1.0f, 1.0f, 1.0f, 0.15f,
-
-            1.0f,
-            screenW,
-            screenH
-        );
-
-        const float hudTextTopY =
-            panelCenterY -
-            uiFonts.playerStats.lineHeight() *
-            hudFontScale * 0.5f;
+            << "|" << ownedIds.size();
 
         uiFonts.renderer.add(
             uiFonts.playerStats,
-            hudText,
-            marginLeft + paddingX,
-            hudTextTopY,
-            1.0f,
-            1.0f,
-            1.0f,
-            1.0f,
-            hudFontScale
+            massStream.str(),
+            xOffset + 159.0f, y,
+            r, g, b, a,
+            fontScale
         );
 
-        uiFonts.renderer.flush(
+        uiFonts.renderer.add(
             uiFonts.playerStats,
-            screenW,
-            screenH
+            "max:" +
+            std::to_string(
+                static_cast<int>(gameState.bestScoreSoFar)
+            ),
+            xOffset + 280.0f, y,
+            r, g, b, a,
+            fontScale
         );
     }
+
+    // Выводим все добавленные строки, включая координаты
+    // в режиме наблюдателя.
+    uiFonts.renderer.flush(
+        uiFonts.playerStats,
+        screenW,
+        screenH
+    );
 
     // --------------------------------------------------------
     // FPS + Ping

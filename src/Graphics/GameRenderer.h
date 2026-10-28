@@ -23,6 +23,7 @@
 
 class VirusGuard;
 class FrameProfiler;
+class UserSkinDatabase;
 class GameRenderer
 {
 public:
@@ -36,22 +37,26 @@ public:
         SkinManager& skinManager,
         TextRenderer& textRenderer,
         Font& font,
-        Camera& camera
+        Camera& camera,
+        UserSkinDatabase& userSkinDatabase
     );
 
     void updatePositions(
-        std::unordered_map<uint32_t, RenderState>& renderStates
+        std::unordered_map<uint32_t, RenderState>& renderStates,
+        float deltaTime
     );
 
     void updateRenderStates(
         const WorldSnapshot& blobs,
-        std::unordered_map<uint32_t, RenderState>& renderStates
+        std::unordered_map<uint32_t, RenderState>& renderStates,
+        float segDuration
     );
 
     InterpolationSettings& interpolation() { return m_interp; }
 
     void draw(
         const WorldSnapshot& blobs,
+        std::uint64_t foodVersion,
         const std::vector<uint32_t>& ownedIds,
         std::unordered_map<uint32_t, RenderState>& renderStates,
         float screenW,
@@ -72,7 +77,7 @@ private:
     CircleMesh& circleMesh;
     SkinMesh& skinMesh;
     InstancedCircleRenderer& foodRenderer;
-
+    UserSkinDatabase& userSkinDatabase;
     SkinManager& skinManager;
 
     TextRenderer& textRenderer;
@@ -105,6 +110,16 @@ private:
     GLint iViewportSize;
 
     std::vector<DrawEntry> drawList;
-    std::vector<float> foodInstanceData;
+
+    // CPU-кэш статической еды. Перестраивается при изменении World.
+    std::vector<float> m_staticFood;
+
+    // Динамические круги: выброшенная масса и клетки без готового скина.
+    std::vector<float> dynamicInstanceData;
+
+    // Версия еды, загруженная в GPU-буфер.
+    std::uint64_t m_foodVersionDrawn = 0;
+    bool m_staticFoodInitialized = false;
+
     std::vector<GLuint> skinTexturesByDrawIndex;
 };

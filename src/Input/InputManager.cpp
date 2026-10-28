@@ -22,6 +22,17 @@ bool InputManager::poll(InputState& state)
     state.textBackspacePressed = false;
     state.textEnterPressed = false;
     state.textEscapePressed = false;
+    state.textSelectAllPressed = false;
+    state.textCopyPressed = false;
+    state.textCutPressed = false;
+    state.textPastePressed = false;
+
+    state.textDeletePressed = false;
+    state.textLeftPressed = false;
+    state.textRightPressed = false;
+    state.textHomePressed = false;
+    state.textEndPressed = false;
+    state.textShiftHeld = false;
 
     for (auto& [action, stateAction] : state.actions)
     {
@@ -46,15 +57,22 @@ bool InputManager::poll(InputState& state)
             break;
 
         case SDL_EVENT_MOUSE_BUTTON_DOWN:
+            state.mouseX = event.button.x;
+            state.mouseY = event.button.y;
+
             if (event.button.button == SDL_BUTTON_LEFT)
             {
                 state.leftButton = true;
                 state.leftButtonJustPressed = true;
-                state.leftButtonDoubleClicked = (event.button.clicks == 2);
+                state.leftButtonDoubleClicked =
+                    (event.button.clicks == 2);
             }
             break;
 
         case SDL_EVENT_MOUSE_BUTTON_UP:
+            state.mouseX = event.button.x;
+            state.mouseY = event.button.y;
+
             if (event.button.button == SDL_BUTTON_LEFT)
             {
                 state.leftButton = false;
@@ -69,9 +87,64 @@ bool InputManager::poll(InputState& state)
         case SDL_EVENT_KEY_DOWN:
             if (state.textInputActive)
             {
+                const bool ctrl =
+                    (event.key.mod & SDL_KMOD_CTRL) != 0;
+
+                const bool shift =
+                    (event.key.mod & SDL_KMOD_SHIFT) != 0;
+
+                if (ctrl && !event.key.repeat &&
+                    event.key.scancode == SDL_SCANCODE_A)
+                {
+                    state.textSelectAllPressed = true;
+                    break;
+                }
+                if (ctrl && !event.key.repeat &&
+                    event.key.scancode == SDL_SCANCODE_C)
+                {
+                    state.textCopyPressed = true;
+                    break;
+                }
+                if (ctrl && !event.key.repeat &&
+                    event.key.scancode == SDL_SCANCODE_X)
+                {
+                    state.textCutPressed = true;
+                    break;
+                }
+                if (ctrl && !event.key.repeat &&
+                    event.key.scancode == SDL_SCANCODE_V)
+                {
+                    state.textPastePressed = true;
+                    break;
+                }
+
                 if (event.key.scancode == SDL_SCANCODE_BACKSPACE)
                 {
                     state.textBackspacePressed = true;
+                }
+                else if (event.key.scancode == SDL_SCANCODE_DELETE)
+                {
+                    state.textDeletePressed = true;
+                }
+                else if (event.key.scancode == SDL_SCANCODE_LEFT)
+                {
+                    state.textLeftPressed = true;
+                    state.textShiftHeld = shift;
+                }
+                else if (event.key.scancode == SDL_SCANCODE_RIGHT)
+                {
+                    state.textRightPressed = true;
+                    state.textShiftHeld = shift;
+                }
+                else if (event.key.scancode == SDL_SCANCODE_HOME)
+                {
+                    state.textHomePressed = true;
+                    state.textShiftHeld = shift;
+                }
+                else if (event.key.scancode == SDL_SCANCODE_END)
+                {
+                    state.textEndPressed = true;
+                    state.textShiftHeld = shift;
                 }
                 else if (
                     !event.key.repeat &&
@@ -95,7 +168,7 @@ bool InputManager::poll(InputState& state)
                     state.fullscreenPressed = true;
                 }
 
-                // Не передаём игровые клавиши в управление игрой.
+                // Пока поле активно, игровые клавиши не обрабатываем.
                 break;
             }
             if (event.key.scancode == SDL_SCANCODE_F1 && !event.key.repeat)

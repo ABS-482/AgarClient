@@ -44,6 +44,19 @@ struct InputState
     bool textBackspacePressed = false;
     bool textEnterPressed = false;
     bool textEscapePressed = false;
+    bool textSelectAllPressed = false;
+    bool textCopyPressed = false;
+    bool textCutPressed = false;
+    bool textPastePressed = false;
+
+    bool textDeletePressed = false;
+    bool textLeftPressed = false;
+    bool textRightPressed = false;
+    bool textHomePressed = false;
+    bool textEndPressed = false;
+
+    // Shift при нажатии стрелки или Home/End.
+    bool textShiftHeld = false;
 
     // Состояние передаётся из MainMenu до InputManager::poll().
     bool textInputActive = false;

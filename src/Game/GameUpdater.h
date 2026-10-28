@@ -40,6 +40,17 @@ private:
     World& world;
     GameState& gameState;
 
-    // Переиспользуемый буфер, чтобы не выделять память каждый кадр.
+    // Переиспользуемый список клеток для агрегатов камеры.
     std::vector<CameraCell> cameraCells;
+
+    // Текущая цель наблюдателя, сохраняется между кадрами.
+    Vec2f spectatorTarget{};
+
+    bool spectatorTargetInitialized = false;
+
+    // Java хранит headPos/headRadius статически.
+    // Если в текущем кадре голова не обновилась, сохраняем
+    // предыдущее значение.
+    Vec2f trackedHeadPos{};
+    float trackedHeadRadius = 0.0f;
 };

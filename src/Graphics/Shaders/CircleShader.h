@@ -9,12 +9,11 @@ namespace CircleShader
         uniform vec2 uCenter;
         uniform float uRadius;
 
-        // JS camera:
-        // screen = center + (world - offset) * ratio
-
-        uniform vec2 uCameraPos;   // offsetX, offsetY
-        uniform float uZoom;       // здесь теперь именно camera.ratio
-        uniform vec2 uScreenSize;  // реальные пиксели окна
+        // Новая Camera.
+        uniform vec2 uCameraPos;
+        uniform float uZoom;
+        uniform vec2 uScreenSize;
+        uniform vec2 uViewportSize;
         uniform float uDepth;
 
         out vec2 vLocalPos;
@@ -23,6 +22,7 @@ namespace CircleShader
         {
             vLocalPos = aPos;
 
+            // Локальные координаты круга -> мировые координаты.
             vec2 worldPos =
                 uCenter +
                 aPos * uRadius;
@@ -31,10 +31,15 @@ namespace CircleShader
                 worldPos -
                 uCameraPos;
 
+            // Масштаб с учётом viewport и зума камеры.
+            vec2 scale =
+                (uScreenSize / uViewportSize) / uZoom;
+
             vec2 screenPos =
                 uScreenSize * 0.5 +
-                rel * uZoom;
+                rel * scale;
 
+            // Экранные координаты -> OpenGL NDC.
             vec2 ndc = vec2(
                 (screenPos.x / uScreenSize.x) * 2.0 - 1.0,
                 1.0 - (screenPos.y / uScreenSize.y) * 2.0
@@ -73,7 +78,7 @@ namespace CircleShader
             }
             else
             {
-                // Внешний край.
+                // Внешний край обводки.
                 float outerAlpha =
                     1.0 -
                     smoothstep(
@@ -82,7 +87,7 @@ namespace CircleShader
                         dist
                     );
 
-                // Внутренний край кольца.
+                // Внутренний край обводки.
                 float innerRadius =
                     1.0 - uOutlineWidth;
 
@@ -101,11 +106,10 @@ namespace CircleShader
             if (alpha <= 0.0)
                 discard;
 
-            FragColor =
-                vec4(
-                    uColor,
-                    alpha
-                );
+            FragColor = vec4(
+                uColor,
+                alpha
+            );
         }
     )";
 }

@@ -45,10 +45,12 @@ add_executable(AgarClient
     src/Graphics/GameRenderer.cpp
     src/Graphics/GameHUD.cpp
     src/Graphics/LineRenderer.cpp
+    src/Graphics/BackgroundGridRenderer.cpp
 
     src/UI/ModeIconManager.cpp
     src/UI/MainMenu.cpp
     src/UI/HUD/LeaderboardHUD.cpp
+    src/UI/ColorPickerPanel.cpp
 
     src/Input/InputManager.cpp
 
