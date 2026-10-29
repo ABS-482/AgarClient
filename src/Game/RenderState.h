@@ -4,10 +4,8 @@
 
 #include <algorithm>
 #include <chrono>
-#include <cmath>
 #include <cstdint>
 
-// Сохраняем для совместимости со старым кодом.
 struct InterpolationSettings
 {
     float ownMargin = 1.25f;
@@ -22,121 +20,52 @@ struct InterpolationSettings
 
 struct RenderState
 {
-    // Текущее отображаемое состояние.
-    float x = 0.0f;
-    float y = 0.0f;
-    float size = 0.0f;
+    // Отображаемое состояние (JS: x, y, size)
+    float x = 0.0f, y = 0.0f, size = 0.0f;
 
-    // Начальная позиция текущего движения.
-    float ox = 0.0f;
-    float oy = 0.0f;
-    float oSize = 0.0f;
+    // Старт отрезка (JS: ox, oy, oSize)
+    float ox = 0.0f, oy = 0.0f, oSize = 0.0f;
 
-    // Целевая позиция.
-    float nx = 0.0f;
-    float ny = 0.0f;
-    float nSize = 0.0f;
+    // Цель (JS: nx, ny, nSize)
+    float nx = 0.0f, ny = 0.0f, nSize = 0.0f;
 
-    // Оставлено для совместимости и отслеживания обновлений.
+    // JS: updateTime
     std::chrono::steady_clock::time_point updateTime{};
 
-    // Старые поля adaptive-системы.
-    float serverMoveX = 0.0f;
-    float serverMoveY = 0.0f;
-
-    float serverPosX = 0.0f;
-    float serverPosY = 0.0f;
-
+    // ---- Поля для совместимости, на расчёт не влияют ----
+    float serverMoveX = 0.0f, serverMoveY = 0.0f;
+    float serverPosX = 0.0f, serverPosY = 0.0f;
     float moveTimer = 0.0f;
-
-    float rawX = 0.0f;
-    float rawY = 0.0f;
-
-    float vx = 0.0f;
-    float vy = 0.0f;
-
+    float rawX = 0.0f, rawY = 0.0f;
+    float vx = 0.0f, vy = 0.0f;
     float updateInterval = 0.04f;
-    float lerpDuration = 0.05f;
-
-    // Таймер движения, аналог Java lastUpdateTime.
-    // Увеличивается на deltaTime каждого кадра.
+    float lerpDuration = 0.12f;
     float positionElapsed = 0.0f;
-
-    // Целевой размер и прогресс его сглаживания.
     float targetSize = 0.0f;
     float radiusDelta = 0.8f;
 
-    // Отметка последнего сетевого обновления.
     std::chrono::steady_clock::time_point lastSeenUpdate{};
-
     CellType lastCellType = CellType::Food;
-
     bool initialized = false;
     bool isLeading = false;
 
-    // Аналог Java Blob.setRadius().
-    void setTargetSize(float newTargetSize)
+    // Раньше менял radiusDelta, теперь только запоминает цель.
+    void setTargetSize(float newTargetSize) { targetSize = newTargetSize; }
+
+    // JS updatePos(): ratio = (now - updateTime) / 120
+    float updatePos(std::chrono::steady_clock::time_point now)
     {
-        if (targetSize == newTargetSize)
-            return;
+        float ratio = std::chrono::duration<float, std::milli>(now - updateTime).count() / 120.0f;
+        ratio = std::clamp(ratio, 0.0f, 1.0f);
 
-        radiusDelta =
-            radiusDelta < 1.0f
-            ? radiusDelta / 2.0f
-            : 0.0f;
-
-        targetSize = newTargetSize;
-    }
-
-    // Интерполяция от текущей позиции к последней серверной цели.
-    float updatePos(float deltaTime)
-    {
-        positionElapsed += deltaTime;
-
-        const float duration = std::max(lerpDuration, 0.001f);
-
-        const float ratio = std::clamp(
-            positionElapsed / duration,
-            0.0f,
-            1.0f
-        );
-
-        x = ox + (nx - ox) * ratio;
-        y = oy + (ny - oy) * ratio;
-
+        x = ratio * (nx - ox) + ox;
+        y = ratio * (ny - oy) + oy;
+        size = ratio * (nSize - oSize) + oSize;
         return ratio;
     }
 
-    // Отдельное изменение радиуса, как в Java Blob.act(dt).
-    void updateRadius(float deltaTime)
-    {
-        if (deltaTime <= 0.0f || size == targetSize)
-            return;
-
-        radiusDelta = std::min(
-            radiusDelta + deltaTime * 3.0f,
-            1.0f
-        );
-
-        constexpr float halfPi =
-            1.57079632679489661923f;
-
-        // LibGDX Interpolation.sineIn.
-        const float alpha =
-            1.0f - std::cos(radiusDelta * halfPi);
-
-        float nextSize =
-            size + (targetSize - size) * alpha;
-
-        if (std::abs(
-            std::abs(size) - std::abs(targetSize)
-        ) < 0.01f)
-        {
-            nextSize = targetSize;
-        }
-
-        size = nextSize;
-    }
+    // Заглушка: размер теперь считается в updatePos.
+    void updateRadius(float) {}
 };
 
 struct DrawEntry

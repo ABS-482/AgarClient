@@ -209,6 +209,9 @@ MainMenu::MainMenu(
     m_uSkinTexture =
         skinShader.uniformLocation("uSkin");
 
+    m_uSkinViewportSize =
+        skinShader.uniformLocation("uViewportSize");
+
     const std::string circledBlobPath =
         AssetPath::get("ui/circledBlob.png");
 
@@ -1843,6 +1846,12 @@ void MainMenu::draw(
 
         skinShader.setVec2(
             m_uSkinScreenSize,
+            screenW,
+            screenH
+        );
+
+        skinShader.setVec2(
+            m_uSkinViewportSize,
             screenW,
             screenH
         );

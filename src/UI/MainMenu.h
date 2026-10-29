@@ -234,6 +234,7 @@ private:
     GLint m_uSkinZoom = -1;
     GLint m_uSkinScreenSize = -1;
     GLint m_uSkinTexture = -1;
+    GLint m_uSkinViewportSize = -1;
     GLuint m_circledBlobTexture = 0;
     GLuint m_blobTexture = 0;
     GLuint m_passwordPeekTexture = 0;

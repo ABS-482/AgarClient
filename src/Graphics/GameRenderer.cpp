@@ -145,140 +145,80 @@ GameRenderer::GameRenderer(
 void GameRenderer::updateRenderStates(
     const WorldSnapshot& blobs,
     std::unordered_map<uint32_t, RenderState>& renderStates,
-    float segDuration
+    float /*segDuration*/ = 0.0f   // JS-схема использует фиксированные 120 мс
 )
 {
     for (const auto& [id, blob] : *blobs)
     {
         // Еда рисуется отдельным статическим GPU-буфером.
-        // RenderState для неё создавать не нужно.
         if (blob.cellType == CellType::Food)
             continue;
 
         RenderState& rs = renderStates[id];
 
-        // ----------------------------------------------------
-        // Первичная инициализация клетки.
-        // ----------------------------------------------------
-
         if (!rs.initialized)
         {
-            rs.x = blob.targetX;
-            rs.y = blob.targetY;
-            rs.size = blob.targetSize;
-
-            rs.ox = blob.targetX;
-            rs.oy = blob.targetY;
-            rs.oSize = blob.targetSize;
-
-            rs.nx = blob.targetX;
-            rs.ny = blob.targetY;
-            rs.nSize = blob.targetSize;
+            rs.x = rs.ox = rs.nx = blob.targetX;
+            rs.y = rs.oy = rs.ny = blob.targetY;
+            rs.size = rs.oSize = rs.nSize = blob.targetSize;
 
             rs.updateTime = blob.lastUpdateTime;
 
-            rs.serverMoveX = blob.targetX;
-            rs.serverMoveY = blob.targetY;
-            rs.serverPosX = blob.targetX;
-            rs.serverPosY = blob.targetY;
-
-            rs.rawX = blob.targetX;
-            rs.rawY = blob.targetY;
-
-            rs.vx = 0.0f;
-            rs.vy = 0.0f;
+            rs.serverMoveX = rs.serverPosX = rs.rawX = blob.targetX;
+            rs.serverMoveY = rs.serverPosY = rs.rawY = blob.targetY;
+            rs.vx = rs.vy = 0.0f;
 
             rs.targetSize = blob.targetSize;
             rs.radiusDelta = 0.8f;
-
             rs.moveTimer = 0.0f;
             rs.positionElapsed = 0.0f;
-
-            rs.updateInterval = 0.05f;
-            rs.lerpDuration = std::clamp(segDuration, 0.03f, 0.12f);
+            rs.updateInterval = 0.04f;
+            rs.lerpDuration = 0.12f;
 
             rs.lastSeenUpdate = blob.lastUpdateTime;
             rs.lastCellType = blob.cellType;
-
             rs.initialized = true;
-
             continue;
         }
 
-        // ----------------------------------------------------
-        // Пришло новое серверное обновление.
-        //
-        // Аналог Java Blob.moveToPosition():
-        // текущая отображаемая позиция становится началом
-        // нового движения, а таймер сбрасывается.
-        // ----------------------------------------------------
-
         if (blob.lastUpdateTime != rs.lastSeenUpdate)
         {
-            // Начальная точка — последняя отображаемая позиция.
+            // JS: позиция на момент прихода пакета становится началом отрезка.
+            rs.updatePos(blob.lastUpdateTime);
+
             rs.ox = rs.x;
             rs.oy = rs.y;
             rs.oSize = rs.size;
 
-            // Новая серверная цель.
             rs.nx = blob.targetX;
             rs.ny = blob.targetY;
             rs.nSize = blob.targetSize;
 
-            // Сохраняем timestamp для отслеживания обновлений
-            // и совместимости с остальным кодом.
-            // Прогресс движения от него больше не зависит.
             rs.updateTime = blob.lastUpdateTime;
 
-            // Каждое новое перемещение начинается заново.
-            rs.positionElapsed = 0.0f;
-            rs.moveTimer = 0.0f;
-
-            // Отдельное сглаживание размера.
-            rs.setTargetSize(blob.targetSize);
-
+            rs.targetSize = blob.targetSize;
             rs.lastSeenUpdate = blob.lastUpdateTime;
             rs.lastCellType = blob.cellType;
 
-            // Старые поля оставляем для совместимости.
-            rs.serverMoveX = rs.ox;
-            rs.serverMoveY = rs.oy;
-
-            rs.serverPosX = rs.nx;
-            rs.serverPosY = rs.ny;
-
-            rs.rawX = rs.nx;
-            rs.rawY = rs.ny;
-
-            rs.vx = 0.0f;
-            rs.vy = 0.0f;
-
-            rs.lerpDuration = std::clamp(
-                segDuration,
-                0.03f,
-                0.12f
-            );
+            // Поля совместимости
+            rs.serverMoveX = rs.ox;  rs.serverMoveY = rs.oy;
+            rs.serverPosX = rs.nx;  rs.serverPosY = rs.ny;
+            rs.rawX = rs.nx;         rs.rawY = rs.ny;
+            rs.vx = rs.vy = 0.0f;
+            rs.moveTimer = 0.0f;
+            rs.positionElapsed = 0.0f;
+            rs.lerpDuration = 0.12f;
         }
     }
 
-    // --------------------------------------------------------
-    // Удаляем состояния клеток, которых больше нет в мире.
-    // --------------------------------------------------------
-
-    for (auto it = renderStates.begin();
-        it != renderStates.end();)
+    // Удаляем состояния клеток, которых нет в мире (и еду, если она там оказалась).
+    for (auto it = renderStates.begin(); it != renderStates.end(); )
     {
         const auto blobIt = blobs->find(it->first);
-
-        if (blobIt == blobs->end() ||
-            blobIt->second.cellType == CellType::Food)
-        {
+        if (blobIt == blobs->end() || blobIt->second.cellType == CellType::Food)
             it = renderStates.erase(it);
-        }
         else
-        {
             ++it;
-        }
     }
 }
 
@@ -293,19 +233,14 @@ static int getBlobMass(const Blob& blob)
 
 void GameRenderer::updatePositions(
     std::unordered_map<uint32_t, RenderState>& renderStates,
-    float deltaTime
-)
+    float /*deltaTime*/ = 0.0f)     // не используется, оставлен ради старых вызовов
 {
-    if (deltaTime <= 0.0f)
-        return;
+    const auto now = std::chrono::steady_clock::now();   // один раз на кадр
 
     for (auto& [id, rs] : renderStates)
     {
-        if (!rs.initialized)
-            continue;
-
-        rs.updatePos(deltaTime);
-        rs.updateRadius(deltaTime);
+        if (rs.initialized)
+            rs.updatePos(now);
     }
 }
 

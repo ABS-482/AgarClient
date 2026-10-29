@@ -62,6 +62,8 @@ add_executable(AgarClient
     src/Network/ServerListFetcher.cpp
     src/Network/RealtimeInfoClient.cpp
     src/Network/UserSkinDatabase.cpp
+    src/Network/AccountClient.cpp
+    src/Network/AccountClient.h
 
     src/Fonts/UiFont.cpp
     src/Fonts/UiTextRenderer.cpp
@@ -91,6 +93,7 @@ target_link_libraries(AgarClient PRIVATE
     Freetype::Freetype
     bcrypt
     winhttp
+    nlohmann_json::nlohmann_json
 )
 
 target_include_directories(AgarClient PRIVATE ${Stb_INCLUDE_DIR})
